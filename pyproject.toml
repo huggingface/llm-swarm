@@ -1,0 +1,27 @@
+[tool.poetry]
+name = "tgi-swarm"
+version = "0.1.0"
+description = ""
+authors = [
+    "Guilherme Penedo <guilherme@huggingface.co>",
+    "Shengyi Costa Huang <costa@huggingface.co>",
+]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = ">=3.9,<3.13"
+asyncio = "^3.4.3"
+aiohttp = "^3.8.6"
+tqdm = "^4.66.1"
+pandas = "^2.1.2"
+datasets = "^2.14.6"
+tyro = "^0.5.12"
+huggingface-hub = "^0.18.0"
+transformers = "<4.34.1"
+jinja2 = "^3.1.2"
+wonderwords = "^2.2.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
