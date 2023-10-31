@@ -1,4 +1,6 @@
-test_output
+output
+slurm
+hosts.txt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

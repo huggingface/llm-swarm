@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from string import Template
 
 from datasets import load_dataset
@@ -15,7 +15,9 @@ class Args:
     """Max extract length in characters"""
     output_folder: str
     """Folder to store the output"""
-    tgi: tyro.conf.OmitArgPrefixes[TGIConfig]
+    tgi: tyro.conf.OmitArgPrefixes[TGIConfig] = field(
+        default_factory=lambda: TGIConfig()
+    )
 
 prompt_template = Template("""Here is an extract from a webpage: "$WEBPAGE".
 

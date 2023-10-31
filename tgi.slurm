@@ -1,4 +1,5 @@
 #!/bin/bash
+#SBATCH --job-name=tgi-swarm
 #SBATCH --nodes=1
 #SBATCH --partition=production-cluster
 #SBATCH --ntasks-per-node=1

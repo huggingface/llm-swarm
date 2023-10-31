@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import os
 
 from datasets import load_dataset
@@ -10,9 +10,11 @@ from tgi_swarm import TGIConfig, generate_data, SENTINEL
 
 @dataclass
 class Args:
-    output_folder: str
+    output_folder: str = "output/hh_simple"
     """Folder to store the output"""
-    tgi: tyro.conf.OmitArgPrefixes[TGIConfig]
+    tgi: tyro.conf.OmitArgPrefixes[TGIConfig] = field(
+        default_factory=lambda: TGIConfig()
+    )
 
 
 if __name__ == "__main__":

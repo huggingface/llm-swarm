@@ -28,7 +28,7 @@ class TGIConfig:
     """Individual batch size"""
     instances: Annotated[int, tyro.conf.arg(aliases=["-i"])] = 32
     """Number of model instances"""
-    endpoint: Annotated[str, tyro.conf.arg(aliases=["-e"])] = "https://falcon-180b.ngrok.io"
+    endpoint: Annotated[str, tyro.conf.arg(aliases=["-e"])] = "hosts.txt"
     """Model endpoint. Can be path to file with list of endpoints"""
     start: Annotated[int, tyro.conf.arg(aliases=["-s"])] = 0
     """Start index (in terms of chunks of size instances*batch_size)"""
