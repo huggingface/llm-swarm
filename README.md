@@ -32,3 +32,5 @@ Generating...
 Saving chunk 1/None
 Processing complete.
 ```
+
+Then you should be able to see some sample outputs in `output/hh_simple`
