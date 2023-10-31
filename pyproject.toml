@@ -5,6 +5,7 @@ description = ""
 authors = [
     "Guilherme Penedo <guilherme@huggingface.co>",
     "Shengyi Costa Huang <costa@huggingface.co>",
+    "Thomas Wolf <thomas@huggingface.co>",
 ]
 readme = "README.md"
 
