@@ -23,6 +23,11 @@ function unused_port() {
         head -n "$N"
 }
 
+if [ -z "$HF_TOKEN" ]; then
+  echo "You should provide a Hugging Face token in HF_TOKEN."
+  exit 1
+fi
+
 export PORT=$(unused_port)
 #export PORT=25677
 #agent_port=$(unused_port)
@@ -35,7 +40,7 @@ export MODEL_PROMPT_TEMPLATE="<s>{{#each messages}}{{#ifUser}}[INST] {{#if @firs
 
 
 touch $PWD/hosts.txt
-srun echo "http://$(hostname -I | awk '{print $1}'):$PORT" >> $PWD/hosts.txt &&  sudo docker run -e HUGGING_FACE_HUB_TOKEN=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 \
+srun echo "http://$(hostname -I | awk '{print $1}'):$PORT" >> $PWD/hosts.txt &&  sudo docker run -e HUGGING_FACE_HUB_TOKEN=$HF_TOKEN \
 --gpus "\"device=$CUDA_VISIBLE_DEVICES"\" --shm-size 1g \
 -v $volume:/data -p $PORT:80 \
 ghcr.io/huggingface/text-generation-inference \
