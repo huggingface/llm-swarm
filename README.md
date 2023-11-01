@@ -6,17 +6,24 @@ Prerequisites:
 * A slurm cluster
 
 
-## Hello world
+## Install and prepare
 
 ```bash
 mkdir -p slurm/logs
+pip install -e .
+```
+
+## Hello world
+
+```bash
 sbatch tgi.slurm
 ```
 
-This will generate log filesa in `slurm/logs` and also `hosts.txt` with the list of nodes used for the job.
+This will generate log files in `slurm/logs` and also `hosts.txt` with the list of nodes used for the job.
 
 ```bash
-python python generate_hh_simple.py
+pip install -r ./examples/hh/requirements.txt
+python ./examples/hh/generate_hh_simple.py
 ```
 ```
 Loaded 1 endpoints: http://26.0.149.1:45920
