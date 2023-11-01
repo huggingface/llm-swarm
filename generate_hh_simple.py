@@ -1,14 +1,14 @@
-from dataclasses import dataclass, field
-import os
-
 import asyncio
+import os
+from dataclasses import dataclass, field
 from typing import Annotated
-from aiohttp import ClientError
-from datasets import load_dataset
+
 import pandas as pd
 import tyro
+from aiohttp import ClientError
+from datasets import load_dataset
 
-from tgi_swarm import TGIConfig, generate_data, SENTINEL
+from tgi_swarm import SENTINEL, TGIConfig, generate_data
 
 
 @dataclass
@@ -23,9 +23,7 @@ class Args:
     """Max new tokens"""
     format_prompt: bool = True
     """Whether to format prompt"""
-    tgi: tyro.conf.OmitArgPrefixes[TGIConfig] = field(
-        default_factory=lambda: TGIConfig()
-    )
+    tgi: tyro.conf.OmitArgPrefixes[TGIConfig] = field(default_factory=lambda: TGIConfig())
 
 
 if __name__ == "__main__":
@@ -35,6 +33,7 @@ if __name__ == "__main__":
     def reader(input_queue, start_index):
         print(f"Loading dataset")
         rw = load_dataset("Anthropic/hh-rlhf", split="train").select(range(64))
+
         def extract(example):
             # Extract the "Human:" prompts
             example = example["chosen"]
@@ -42,16 +41,13 @@ if __name__ == "__main__":
             for segment in split_text:
                 if "Human:" in segment:
                     return {"prompt": segment.split(": ")[1]}
-                
+
         rw = rw.map(extract)
 
         for si, sample in enumerate(rw):
             if si < start_index:
                 continue
-            input_queue.put({
-                "index": si,
-                "prompt": sample["prompt"]
-            })
+            input_queue.put({"index": si, "prompt": sample["prompt"]})
         input_queue.put(SENTINEL)
 
     # called for each complete chunk
@@ -67,13 +63,14 @@ if __name__ == "__main__":
         while not res:
             try:
                 res = await client.text_generation(
-                    prompt=f"<s>[INST] {sample[args.prompt_column]} [\INST]",
+                    prompt=rf"<s>[INST] {sample[args.prompt_column]} [\INST]",
                     max_new_tokens=args.max_new_tokens,
-                    stop_sequences=STOP_SEQ, temperature=args.temperature,
+                    stop_sequences=STOP_SEQ,
+                    temperature=args.temperature,
                 )
                 for stop_seq in STOP_SEQ:
                     if res.endswith(stop_seq):
-                        res = res[:-len(stop_seq)].rstrip()
+                        res = res[: -len(stop_seq)].rstrip()
             # retry on error
             except ClientError as e:
                 if tries == 10:
