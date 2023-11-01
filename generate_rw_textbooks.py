@@ -1,4 +1,5 @@
 import asyncio
+import os
 from dataclasses import dataclass, field
 from string import Template
 from typing import Annotated
@@ -40,6 +41,7 @@ Write a long and very detailed tutorial that could be part of WikiHow whose titl
 if __name__ == "__main__":
     args = tyro.cli(Args, use_underscores=True)
     pprint(args)
+    os.makedirs(args.output_folder, exist_ok=True)
 
     # reader: add all data and then add SENTINEL
     def reader(input_queue, start_index):

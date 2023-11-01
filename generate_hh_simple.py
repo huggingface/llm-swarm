@@ -7,6 +7,7 @@ import pandas as pd
 import tyro
 from aiohttp import ClientError
 from datasets import load_dataset
+from rich.pretty import pprint
 
 from tgi_swarm import SENTINEL, TGIConfig, generate_data
 
@@ -28,6 +29,7 @@ class Args:
 
 if __name__ == "__main__":
     args = tyro.cli(Args, use_underscores=True)
+    pprint(args)
     os.makedirs(args.output_folder, exist_ok=True)
 
     def reader(input_queue, start_index):
