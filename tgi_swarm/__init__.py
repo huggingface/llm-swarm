@@ -1,16 +1,13 @@
-import argparse
 import asyncio
 from dataclasses import dataclass
 import multiprocessing.queues
 import os
-import random
 from collections import defaultdict
 from math import ceil
 from multiprocessing import Queue, Process
-from typing import Annotated
+from typing import Annotated, Callable
 import os
 
-from aiohttp import ClientError
 from huggingface_hub import AsyncInferenceClient
 from tqdm import tqdm
 import tyro
@@ -32,43 +29,13 @@ class TGIConfig:
     """Model endpoint. Can be path to file with list of endpoints"""
     start: Annotated[int, tyro.conf.arg(aliases=["-s"])] = 0
     """Start index (in terms of chunks of size instances*batch_size)"""
-    prompt_column: Annotated[str, tyro.conf.arg(aliases=["-pcol"])] = "prompt"
-    """Name of the column containing the prompt"""
     checkpoint_size: Annotated[int, tyro.conf.arg(aliases=["-csize"])] = 5000
     """Save partial results ever checkpoint_size generations"""
-    temperature: Annotated[float, tyro.conf.arg(aliases=["-t"])] = 1.0
-    """Generation temperature"""
-    max_new_tokens: Annotated[int, tyro.conf.arg(aliases=["-toks"])] = 1500
-    """Max new tokens"""
-    format_prompt: bool = True
-    """Whether to format prompt"""
-
-
-async def send_request(sample, client, args):
-    res = None
-    tries = 1
-    random_sleep = random.randint(3, 6)
-    while not res:
-        try:
-            res = await client.text_generation(
-                prompt=f"User: {sample[args.prompt_column]}\nFalcon: " if args.format_prompt else sample[args.prompt_column],
-                max_new_tokens=args.max_new_tokens,
-                stop_sequences=STOP_SEQ, temperature=args.temperature
-            )
-            for stop_seq in STOP_SEQ:
-                if res.endswith(stop_seq):
-                    res = res[:-len(stop_seq)].rstrip()
-        except ClientError as e:
-            if tries == 10:
-                raise e
-            print(f"Error: {e}. Retrying...", flush=True)
-            await asyncio.sleep(tries * 2 + random_sleep)
-            tries += 1
-    sample["textbook"] = res
-    return sample
 
 
 SENTINEL = None
+
+
 
 # from transformers import AutoTokenizer
 
@@ -157,20 +124,20 @@ SENTINEL = None
 
 
 
-async def requests_worker(input_queue: multiprocessing.Queue, output_queue: multiprocessing.Queue, client, args):
+async def requests_worker(send_request: Callable, input_queue: multiprocessing.Queue, output_queue: multiprocessing.Queue, client):
     while True:
         element = input_queue.get()
         if element == SENTINEL:
             input_queue.put(element)
             break
-        res = await send_request(element, client, args)
+        res = await send_request(element, client)
         output_queue.put(res)
 
 
-async def mp_worker_async(input_queue: multiprocessing.Queue, endpoint, args, output_queue: multiprocessing.Queue):
+async def mp_worker_async(send_request: Callable, input_queue: multiprocessing.Queue, endpoint, args, output_queue: multiprocessing.Queue):
     client = AsyncInferenceClient(model=endpoint)
     await asyncio.gather(
-        *[requests_worker(input_queue, output_queue, client, args) for _ in range(args.batch_size)])
+        *[requests_worker(send_request, input_queue, output_queue, client) for _ in range(args.batch_size)])
     output_queue.put(SENTINEL)  # signal that we are done
 
 
@@ -187,7 +154,6 @@ def load_endpoints(endpoint_val):
 def generate_data(args: TGIConfig, reader, writer, send_request, total_input=None, max_input_size=0):
     endpoints = load_endpoints(args.endpoint)
     print(f"Loaded {len(endpoints)} endpoints: {', '.join(endpoints)}")
-    print(f"Prompt formatting is {'ON' if args.format_prompt else 'OFF'}")
     NR_INSTANCES = args.instances
 
     print("Preparing data")
@@ -201,7 +167,7 @@ def generate_data(args: TGIConfig, reader, writer, send_request, total_input=Non
     print("Starting workers")
     # submit all the data to the workers
     output_queue = Queue()
-    ps = [Process(target=mp_worker, args=(input_queue, endpoints[wi % len(endpoints)], args, output_queue))
+    ps = [Process(target=mp_worker, args=(send_request, input_queue, endpoints[wi % len(endpoints)], args, output_queue))
           for wi in range(NR_INSTANCES)]
     for p in ps:
         p.start()
