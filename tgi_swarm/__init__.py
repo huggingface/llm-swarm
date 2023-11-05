@@ -134,9 +134,8 @@ def generate_data(args: TGIConfig,
     # get results and save chunks
     workers_completed = 0
     results = defaultdict(list)
-    should_continue = True
     with tqdm(total=total_input, initial=args.start * checkpoint_chunk_size) as pbar:
-        while should_continue:
+        while True:
             generated_textbook = output_queue.get()
             # check if we are done
             if generated_textbook == SENTINEL:
@@ -153,8 +152,8 @@ def generate_data(args: TGIConfig,
             if len(results[chunk_i]) == checkpoint_chunk_size:  # current chunk is complete
                 sorted_res = sorted(results.pop(chunk_i), key=lambda x: int(x["index"]))
                 should_continue = writer(sorted_res, chunk_i, total_nr_chunks)
-                if should_continue is None:
-                    should_continue = True
+                if should_continue is False:
+                    break
     if results:
         for chunk_i, res in results.items():
             if res:
@@ -169,6 +168,12 @@ def generate_data(args: TGIConfig,
     for p in ps:
         p.join(timeout=3)
     for p in ps:
-        p.close()
-    reader_p.join()
-    reader_p.close()
+        try:
+            p.close()
+        except ValueError:
+            p.terminate()
+    reader_p.join(timeout=3)
+    try:
+        reader_p.close()
+    except ValueError:
+        reader_p.terminate()

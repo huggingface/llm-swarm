@@ -16,7 +16,7 @@ from wonderwords import RandomWord
 
 from datatrove.pipeline.tokens.tokenizer import DocumentTokenizer
 from datatrove.pipeline.tokens.merger import DocumentTokenizerMerger
-from datatrove.io import S3OutputDataFolder, S3InputDataFolder, S3InputDataFile
+from datatrove.io import S3OutputDataFolder, S3InputDataFolder, S3OutputDataFile
 from datatrove.data import Document
 
 from tgi_swarm import SENTINEL, TGIConfig, generate_data
@@ -135,7 +135,13 @@ if __name__ == "__main__":
 
         # Tokenize the textbook
         doc_tokenizer((Document(content=ch["textbook"], data_id=f"{chunk_i}_{i}") for i, ch in enumerate(chunk)), rank=chunk_i)
-        doc_tokenizer.output_folder.open()
+        
+        stats_file = S3OutputDataFile(
+            path=f"{args.s3_tmp_prefix}/{args.output_filename}/tokenized/stats.json",
+            local_path=f"{args.output_local_folder}/{args.output_filename}/tokenized/stats.json",
+            cleanup=False)
+        with stats_file.open("w") as f:
+            f.write(doc_tokenizer.stats.to_json())
         tokens = doc_tokenizer.stats.counter["tokens"]
 
         pd.DataFrame(chunk).to_csv(f"{args.output_local_folder}/{chunk_i:05d}.csv", index=False)
