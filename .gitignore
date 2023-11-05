@@ -1,6 +1,7 @@
 output
 slurm
 hosts.txt
+playground/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

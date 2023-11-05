@@ -1,8 +1,11 @@
 import asyncio
 import os
+import multiprocessing
 from dataclasses import dataclass, field
 from string import Template
-from typing import Annotated
+from typing import Annotated, Any
+
+from huggingface_hub import AsyncInferenceClient
 
 import pandas as pd
 import tyro
@@ -11,13 +14,26 @@ from datasets import load_dataset
 from rich.pretty import pprint
 from wonderwords import RandomWord
 
+from datatrove.pipeline.tokens.tokenizer import DocumentTokenizer
+from datatrove.pipeline.tokens.merger import DocumentTokenizerMerger
+from datatrove.io import S3OutputDataFolder, S3InputDataFolder, S3InputDataFile
+from datatrove.data import Document
+
 from tgi_swarm import SENTINEL, TGIConfig, generate_data
 
 
 @dataclass
 class Args:
-    output_folder: str = "output/rw_textbooks"
-    """Folder to store the output"""
+    output_filename: str = "debug-v0.1"
+    """Filenames for the output"""
+    ds_subtype: str = "debug"
+    """Dataset subtype"""
+    output_local_folder: str = "output/textbooks"
+    """Local folder where to save the output"""
+    s3_final_prefix: str = "s3://extreme-scale-datasets/textbooks"
+    """S3 prefix for the final output"""
+    s3_tmp_prefix: str = "s3://extreme-scale-dp-temp/textbooks"
+    """S3 prefix for the temporary output before merging"""
     prompt_column: Annotated[str, tyro.conf.arg(aliases=["-pcol"])] = "prompt"
     """Name of the column containing the prompt"""
     temperature: Annotated[float, tyro.conf.arg(aliases=["-t"])] = 1.0
@@ -28,6 +44,10 @@ class Args:
     """Whether to format prompt"""
     ext_len: int = 200
     """Max extract length in characters"""
+    textbook_tokenizer: str = "gpt2"
+    """Tokenizer to use for the textbook generation"""
+    stop_num_tokens: int = 500
+    """Target number of tokens befor """
     tgi: tyro.conf.OmitArgPrefixes[TGIConfig] = field(default_factory=lambda: TGIConfig())
 
 
@@ -38,13 +58,46 @@ Write a long and very detailed tutorial that could be part of WikiHow whose titl
 """
 )
 
+STOP_SEQ = ["User:", "###", "<|endoftext|>"]
+
+EOS_TOKEN: str = "<|endoftext|>",  # whether to add the EOS token after each document
+
 if __name__ == "__main__":
     args = tyro.cli(Args, use_underscores=True)
     pprint(args)
-    os.makedirs(args.output_folder, exist_ok=True)
+    os.makedirs(args.output_local_folder, exist_ok=True)
+    
+    doc_tokenizer = DocumentTokenizer(
+            S3OutputDataFolder(
+                path=f"{args.s3_tmp_prefix}/{args.output_filename}/tokenized",
+                local_path=f"{args.output_local_folder}/{args.output_filename}/tokenized",
+                # cleanup=False,
+            ),
+            save_filename=args.output_filename,
+            shuffle=False,
+            # save_loss_metadata=False,
+    )
 
-    # reader: add all data and then add SENTINEL
-    def reader(input_queue, start_index):
+    doc_merger = DocumentTokenizerMerger(
+            input_folder=S3InputDataFolder(
+                path=f"{args.s3_tmp_prefix}/{args.output_filename}/tokenized",
+                local_path=f"{args.output_local_folder}/{args.output_filename}/tokenized",
+            ),
+            output_folder=S3OutputDataFolder(
+                path=f"{args.s3_final_prefix}/{args.ds_subtype}/{args.output_filename}",
+                local_path=f"{args.output_local_folder}/{args.ds_subtype}/{args.output_filename}",
+            ),
+            save_filename=args.output_filename,
+        )
+
+    def reader(input_queue: multiprocessing.Queue, start_index: int = 0):
+        """ Read the data starting from start_index and put it sample by sample in the input_queue.
+            Add the end put a SENTINEL in the queue.
+            
+        Args:
+            input_queue (multiprocessing.Queue): input queue
+            start_index (int, optional): start index. Defaults to 0.
+        """
         print(f"Loading dataset")
         rw = load_dataset("tiiuae/falcon-refinedweb", streaming=True, split="train")
         randomw = RandomWord()
@@ -67,14 +120,41 @@ if __name__ == "__main__":
             )
         input_queue.put(SENTINEL)
 
-    # called for each complete chunk
-    def writer(chunk, chunk_i, total_nr_chunks):
+
+    def writer(chunk: Any, chunk_i: int, total_nr_chunks: int) -> bool:
+        """ Write a chunk of samples to disk.
+            Samples are as returned by send_request. 
+            Called for each complete chunk.
+        
+        Args:
+            chunk (Any): sample
+            chunk_i (int): chunk index
+            total_nr_chunks (int): total number of chunks
+        """
         print(f"Saving chunk {chunk_i + 1}/{total_nr_chunks}")
-        pd.DataFrame(chunk).to_csv(f"{args.output_folder}/{chunk_i:05d}.csv", index=False)
 
-    STOP_SEQ = ["User:", "###", "<|endoftext|>"]
+        # Tokenize the textbook
+        doc_tokenizer((Document(content=ch["textbook"], data_id=f"{chunk_i}_{i}") for i, ch in enumerate(chunk)), rank=chunk_i)
+        doc_tokenizer.output_folder.open()
+        tokens = doc_tokenizer.stats.counter["tokens"]
 
-    async def send_request(sample, client):
+        pd.DataFrame(chunk).to_csv(f"{args.output_local_folder}/{chunk_i:05d}.csv", index=False)
+        
+        print(f"Tokens {tokens}")
+
+        return tokens < args.stop_num_tokens
+
+
+    async def send_request(sample: Any, client: AsyncInferenceClient) -> Any:
+        """ Send request to the model and return the result.
+        
+        Args:
+            sample (Any): sample put in the input_queue by the reader function
+            client (AsyncInferenceClienT): client
+        
+        Returns:
+            Any: resul dict with TGI generated text
+        """
         res = None
         tries = 1
         while not res:
@@ -86,10 +166,14 @@ if __name__ == "__main__":
                     max_new_tokens=args.max_new_tokens,
                     stop_sequences=STOP_SEQ,
                     temperature=args.temperature,
+                    do_sample=True,
+                    top_p=0.95,
+                    top_k=None,
                 )
                 for stop_seq in STOP_SEQ:
                     if res.endswith(stop_seq):
                         res = res[: -len(stop_seq)].rstrip()
+
             except ClientError as e:
                 if tries == 10:
                     raise e
@@ -99,5 +183,11 @@ if __name__ == "__main__":
         sample["textbook"] = res
         return sample
 
-    generate_data(args.tgi, reader, writer, send_request, max_input_size=20000)
-    
+
+    def closer():
+        """ Called at the end of the generation """
+        doc_merger(None)
+        print("Done!")
+
+
+    generate_data(args.tgi, reader, writer, send_request, closer=closer, max_input_size=20000)

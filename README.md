@@ -41,3 +41,14 @@ Processing complete.
 ```
 
 Then you should be able to see some sample outputs in `output/hh_simple`
+
+# Installing TGI from scratch
+
+```
+conda install pytorch pytorch-cuda=11.8 -c pytorch -c nvidia
+cd server
+pip install packaging ninja
+make build-flash-attention
+make build-flash-attention-v2
+make build-vllm
+```
