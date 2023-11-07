@@ -94,12 +94,13 @@ def parse_endpoints(endpoint_val: Union[str, List[str]]) -> List[str]:
     return endpoint_val.split(",")
 
 
-def load_endpoints(endpoint_val: Union[str, List[str]]) -> List[str]:
+def load_endpoints(endpoint_val: Union[str, List[str]], num_instances: int = 1) -> List[str]:
     """ Return list of endpoints from either a file or a comma separated string.
     It also checks if the endpoints are reachable.
     
     Args:
         endpoint_val (Union[str, List[str]]): either a file path or a comma separated string
+        num_instances (int, optional): number of instances. Defaults to 1.
     
     Returns:
         List[str]: list of endpoints (e.g. ["http://26.0.154.245:13120"])
@@ -117,6 +118,8 @@ def load_endpoints(endpoint_val: Union[str, List[str]]) -> List[str]:
     while endpoints is None:
         try:
             endpoints = parse_endpoints(endpoint_val)
+            assert len(endpoint[0]) == num_instances # could read an empty file
+            # due to race condition (slurm writing & us reading)
         except:
             print("Attempting to load endpoints...")
             time.sleep(10)
@@ -164,15 +167,14 @@ def generate_data(args: TGIConfig,
         filename = str(uuid.uuid4())
         slurm_path = os.path.join("slurm", f"{filename}.slurm")
         slurm_host_path = os.path.join("slurm", f"{filename}_host.txt")
-        slurm_template = slurm_template.replace(r"{{nodes}}", str(args.instances))
         slurm_template = slurm_template.replace(r"{{slurm_hosts_path}}", slurm_host_path)
         with open(os.path.join("slurm", f"{filename}.slurm"), "w") as f:
             f.write(slurm_template)
-        job_id = run_command(f"sbatch --parsable {slurm_path}")
-        print(f"Slurm Job ID: {job_id}")
-        endpoints = load_endpoints(slurm_host_path)
+        job_ids = [run_command(f"sbatch --parsable {slurm_path}") for _ in range(args.instances)]
+        print(f"Slurm Job ID: {job_ids}")
+        endpoints = load_endpoints(slurm_host_path, args.instances)
     else:
-        endpoints = load_endpoints(args.endpoint)
+        endpoints = load_endpoints(args.endpoint, args.instances)
     num_instances = args.instances
 
     print("Preparing data")
@@ -245,5 +247,6 @@ def generate_data(args: TGIConfig,
         reader_p.terminate()
 
     if args.manage_tgi_instances:
-        run_command(f"scancel {job_id}")
+        for job_id in job_ids:
+            run_command(f"scancel {job_id}")
         print(f"TGI instances terminated")
