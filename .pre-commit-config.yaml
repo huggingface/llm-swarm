@@ -5,32 +5,41 @@ repos:
       - id: pyupgrade
         args: 
           - --py37-plus
-  - repo: https://github.com/PyCQA/isort
-    rev: 5.12.0
-    hooks:
-      - id: isort
-        args:
-          - --profile=black
-          - --skip-glob=wandb/**/*
-          - --thirdparty=wandb
-  - repo: https://github.com/myint/autoflake
-    rev: v1.4
-    hooks:
-      - id: autoflake
-        args:
-          - -r
-          - --exclude=wandb
-          - --in-place
-          - --remove-unused-variables
-          - --remove-all-unused-imports
-  - repo: https://github.com/python/black
-    rev: 22.3.0
-    hooks:
-      - id: black
-        args:
-          - --line-length=127
-          - --exclude=wandb
-  - repo: https://github.com/codespell-project/codespell
+- repo: https://github.com/astral-sh/ruff-pre-commit
+  # Ruff version.
+  rev: v0.1.4
+  hooks:
+    # Run the linter.
+    - id: ruff
+      args: [ --fix ]
+    # Run the formatter.
+    - id: ruff-format
+  # - repo: https://github.com/PyCQA/isort
+  #   rev: 5.12.0
+  #   hooks:
+  #     - id: isort
+  #       args:
+  #         - --profile=black
+  #         - --skip-glob=wandb/**/*
+  #         - --thirdparty=wandb
+  # - repo: https://github.com/myint/autoflake
+  #   rev: v1.4
+  #   hooks:
+  #     - id: autoflake
+  #       args:
+  #         - -r
+  #         - --exclude=wandb
+  #         - --in-place
+  #         - --remove-unused-variables
+  #         - --remove-all-unused-imports
+  # - repo: https://github.com/python/black
+  #   rev: 22.3.0
+  #   hooks:
+  #     - id: black
+  #       args:
+  #         - --line-length=127
+  #         - --exclude=wandb
+  # - repo: https://github.com/codespell-project/codespell
     rev: v2.1.0
     hooks:
       - id: codespell

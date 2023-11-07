@@ -5,7 +5,13 @@ from collections import defaultdict
 from dataclasses import dataclass
 from math import ceil
 from multiprocessing import Process, Queue
+import shlex
+import subprocess
 from typing import Annotated, Callable, Union, List, Optional, Any
+import time
+import uuid
+import requests
+
 
 import tyro
 from huggingface_hub import AsyncInferenceClient
@@ -22,7 +28,7 @@ class TGIConfig:
 
     batch_size: Annotated[int, tyro.conf.arg(aliases=["-bs"])] = 250
     """Individual batch size"""
-    instances: Annotated[int, tyro.conf.arg(aliases=["-i"])] = 32
+    instances: Annotated[int, tyro.conf.arg(aliases=["-i"])] = 2
     """Number of model instances"""
     endpoint: Annotated[str, tyro.conf.arg(aliases=["-e"])] = "hosts.txt"
     """Model endpoint. Can be path to file with list of endpoints"""
@@ -30,9 +36,45 @@ class TGIConfig:
     """Start index (in terms of chunks of size instances*batch_size)"""
     checkpoint_size: Annotated[int, tyro.conf.arg(aliases=["-csize"])] = 5000
     """Save partial results ever checkpoint_size generations"""
+    manage_tgi_instances: Annotated[bool, tyro.conf.arg(aliases=["-r"])] = False
+    """Spin up and terminate TGI instances when the generation is done"""
+    slurm_template_path: Annotated[str, tyro.conf.arg(aliases=["-slurm"])] = "tgi_template.slurm"
+    """Slurm template file path"""
 
 
 SENTINEL = None
+
+
+def run_command(command: str):
+    command_list = shlex.split(command)
+    print(f"running {command}")
+    fd = subprocess.Popen(command_list, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    output, errors = fd.communicate()
+    return_code = fd.returncode
+    assert return_code == 0, f"Command failed with error: {errors.decode('utf-8')}"
+    return output.decode("utf-8").strip()
+
+
+def check_connection(endpoints: List[str]):
+    headers = {
+        "Content-Type": "application/json",
+    }
+    dummy_data = {
+        'inputs': 'What is Deep Learning?',
+        'parameters': {
+            'max_new_tokens': 20,
+        },
+    }
+    for endpoint in endpoints:
+        connected = False
+        while not connected:
+            try:
+                response = requests.post(endpoint, headers=headers, json=dummy_data)
+                print(f"Connected to {endpoint}")
+                connected = True
+            except:
+                print(f"Attempting to reconnect to {endpoint}...")
+                time.sleep(10)
 
 
 async def requests_worker(
@@ -68,7 +110,7 @@ def mp_worker(*largs):
     asyncio.run(mp_worker_async(*largs))
 
 
-def load_endpoints(endpoint_val: Union[str, List[str]]):
+def load_endpoints(endpoint_val: Union[str, List[str]]) -> List[str]:
     """ Return list of endpoints from either a file or a comma separated string
     
     Args:
@@ -106,8 +148,20 @@ def generate_data(args: TGIConfig,
         total_input (Optional[int], optional): total number of inputs. Defaults to None.
         max_input_size (int, optional): max size of input queue. Defaults to 0.
     """
+    if args.manage_tgi_instances:
+        with open(args.slurm_template_path) as f:
+            slurm_template = f.read()
+        slurm_template = slurm_template.replace(r"{{nodes}}", str(args.instances))
+        filename = str(uuid.uuid4())
+        slurm_path = os.path.join("slurm", f"{filename}.slurm")
+        with open(os.path.join("slurm", f"{filename}.slurm"), "w") as f:
+            f.write(slurm_template)
+        job_id = run_command(f"sbatch --parsable {slurm_path}")
+        print(f"Job ID: {job_id}")
+        print("waiting for")
+
     endpoints = load_endpoints(args.endpoint)
-    print(f"Loaded {len(endpoints)} endpoints: {', '.join(endpoints)}")
+    check_connection(endpoints)
     num_instances = args.instances
 
     print("Preparing data")
@@ -177,3 +231,7 @@ def generate_data(args: TGIConfig,
         reader_p.close()
     except ValueError:
         reader_p.terminate()
+
+    if args.manage_tgi_instances:
+        run_command(f"scancel {job_id}")
+        print(f"TGI instances terminated")
