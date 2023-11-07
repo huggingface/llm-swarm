@@ -55,28 +55,6 @@ def run_command(command: str):
     return output.decode("utf-8").strip()
 
 
-def check_connection(endpoints: List[str]):
-    headers = {
-        "Content-Type": "application/json",
-    }
-    dummy_data = {
-        'inputs': 'What is Deep Learning?',
-        'parameters': {
-            'max_new_tokens': 20,
-        },
-    }
-    for endpoint in endpoints:
-        connected = False
-        while not connected:
-            try:
-                response = requests.post(endpoint, headers=headers, json=dummy_data)
-                print(f"Connected to {endpoint}")
-                connected = True
-            except:
-                print(f"Attempting to reconnect to {endpoint}...")
-                time.sleep(10)
-
-
 async def requests_worker(
     send_request: Callable, input_queue: multiprocessing.Queue, output_queue: multiprocessing.Queue, client
 ):
@@ -110,8 +88,15 @@ def mp_worker(*largs):
     asyncio.run(mp_worker_async(*largs))
 
 
+def parse_endpoints(endpoint_val: Union[str, List[str]]) -> List[str]:
+    if endpoint_val.endswith(".txt"):
+        return open(endpoint_val).read().splitlines()
+    return endpoint_val.split(",")
+
+
 def load_endpoints(endpoint_val: Union[str, List[str]]) -> List[str]:
-    """ Return list of endpoints from either a file or a comma separated string
+    """ Return list of endpoints from either a file or a comma separated string.
+    It also checks if the endpoints are reachable.
     
     Args:
         endpoint_val (Union[str, List[str]]): either a file path or a comma separated string
@@ -119,9 +104,34 @@ def load_endpoints(endpoint_val: Union[str, List[str]]) -> List[str]:
     Returns:
         List[str]: list of endpoints (e.g. ["http://26.0.154.245:13120"])
     """
-    if os.path.isfile(endpoint_val):
-        return open(endpoint_val).read().splitlines()
-    return endpoint_val.split(",")
+    headers = {
+        "Content-Type": "application/json",
+    }
+    dummy_data = {
+        'inputs': 'What is Deep Learning?',
+        'parameters': {
+            'max_new_tokens': 20,
+        },
+    }
+    endpoints = None
+    while endpoints is None:
+        try:
+            endpoints = parse_endpoints(endpoint_val)
+        except:
+            print("Attempting to load endpoints...")
+            time.sleep(10)
+    print("obtained endpoints", endpoints)
+    for endpoint in endpoints:
+        connected = False
+        while not connected:
+            try:
+                requests.post(endpoint, headers=headers, json=dummy_data)
+                print(f"Connected to {endpoint}")
+                connected = True
+            except:
+                print(f"Attempting to reconnect to {endpoint}...")
+                time.sleep(10)
+    return endpoints
 
 
 def generate_data(args: TGIConfig,
@@ -151,17 +161,18 @@ def generate_data(args: TGIConfig,
     if args.manage_tgi_instances:
         with open(args.slurm_template_path) as f:
             slurm_template = f.read()
-        slurm_template = slurm_template.replace(r"{{nodes}}", str(args.instances))
         filename = str(uuid.uuid4())
         slurm_path = os.path.join("slurm", f"{filename}.slurm")
+        slurm_host_path = os.path.join("slurm", f"{filename}_host.txt")
+        slurm_template = slurm_template.replace(r"{{nodes}}", str(args.instances))
+        slurm_template = slurm_template.replace(r"{{slurm_hosts_path}}", slurm_host_path)
         with open(os.path.join("slurm", f"{filename}.slurm"), "w") as f:
             f.write(slurm_template)
         job_id = run_command(f"sbatch --parsable {slurm_path}")
-        print(f"Job ID: {job_id}")
-        print("waiting for")
-
-    endpoints = load_endpoints(args.endpoint)
-    check_connection(endpoints)
+        print(f"Slurm Job ID: {job_id}")
+        endpoints = load_endpoints(slurm_host_path)
+    else:
+        endpoints = load_endpoints(args.endpoint)
     num_instances = args.instances
 
     print("Preparing data")
@@ -188,6 +199,7 @@ def generate_data(args: TGIConfig,
     # get results and save chunks
     workers_completed = 0
     results = defaultdict(list)
+    print(total_input)
     with tqdm(total=total_input, initial=args.start * checkpoint_chunk_size) as pbar:
         while True:
             generated_textbook = output_queue.get()
