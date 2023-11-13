@@ -18,6 +18,7 @@ from datatrove.pipeline.tokens.tokenizer import DocumentTokenizer
 from datatrove.pipeline.tokens.merger import DocumentTokenizerMerger
 from datatrove.io import S3OutputDataFolder, S3InputDataFolder, S3OutputDataFile
 from datatrove.data import Document
+from datatrove.utils.stats import PipelineStats
 
 from tgi_swarm import SENTINEL, TGIConfig, generate_data
 
@@ -68,13 +69,10 @@ if __name__ == "__main__":
     args = tyro.cli(Args, use_underscores=True)
     pprint(args)
     os.makedirs(args.output_local_folder, exist_ok=True)
-    
+    3
+    s
     doc_tokenizer = DocumentTokenizer(
-            S3OutputDataFolder(
-                path=f"{args.s3_tmp_prefix}/{args.output_filename}/tokenized",
-                local_path=f"{args.output_local_folder}/{args.output_filename}/tokenized",
-                cleanup=False,
-            ),
+            ,
             save_filename=args.output_filename,
             shuffle=False,
             # save_loss_metadata=False,
@@ -138,7 +136,7 @@ if __name__ == "__main__":
         # Tokenize the textbook
         doc_tokenizer((Document(content=ch["textbook"], data_id=f"{chunk_i}_{i}") for i, ch in enumerate(chunk)), rank=chunk_i)
         
-        tokens = doc_tokenizer.stats.stats["tokens"].total
+        tokens = doc_tokenizer.stats["tokens"].total
 
         pd.DataFrame(chunk).to_csv(f"{args.output_local_folder}/{chunk_i:05d}.csv", index=False)
         
@@ -189,6 +187,9 @@ if __name__ == "__main__":
     def closer():
         """ Called at the end of the generation """
         doc_merger(None)
+        full_stats = PipelineStats([doc_tokenizer, doc_merger])
+        full_stats.save_to_disk(f"{args.output_local_folder}/{args.output_filename}/stats.json")
+        
         print("Done!")
 
 
