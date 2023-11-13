@@ -24,6 +24,8 @@ from tgi_swarm import SENTINEL, TGIConfig, generate_data
 
 @dataclass
 class Args:
+    dataset: str = "tiiuae/falcon-refinedweb"
+    """Hub dataset to use"""
     output_filename: str = "debug-v0.1"
     """Filenames for the output"""
     ds_subtype: str = "debug"
@@ -71,7 +73,7 @@ if __name__ == "__main__":
             S3OutputDataFolder(
                 path=f"{args.s3_tmp_prefix}/{args.output_filename}/tokenized",
                 local_path=f"{args.output_local_folder}/{args.output_filename}/tokenized",
-                # cleanup=False,
+                cleanup=False,
             ),
             save_filename=args.output_filename,
             shuffle=False,
@@ -99,7 +101,7 @@ if __name__ == "__main__":
             start_index (int, optional): start index. Defaults to 0.
         """
         print(f"Loading dataset")
-        rw = load_dataset("tiiuae/falcon-refinedweb", streaming=True, split="train")
+        rw = load_dataset(args.dataset, streaming=True, split="train")
         randomw = RandomWord()
 
         for si, sample in enumerate(rw):
@@ -131,24 +133,18 @@ if __name__ == "__main__":
             chunk_i (int): chunk index
             total_nr_chunks (int): total number of chunks
         """
-        print(f"Saving chunk {chunk_i + 1}/{total_nr_chunks}")
+        print(f"Saving chunk {chunk_i + 1}{' of ' + str(total_nr_chunks) if total_nr_chunks else ''}")
 
         # Tokenize the textbook
         doc_tokenizer((Document(content=ch["textbook"], data_id=f"{chunk_i}_{i}") for i, ch in enumerate(chunk)), rank=chunk_i)
         
-        stats_file = S3OutputDataFile(
-            path=f"{args.s3_tmp_prefix}/{args.output_filename}/tokenized/stats.json",
-            local_path=f"{args.output_local_folder}/{args.output_filename}/tokenized/stats.json",
-            cleanup=False)
-        with stats_file.open("w") as f:
-            f.write(doc_tokenizer.stats.to_json())
-        tokens = doc_tokenizer.stats.counter["tokens"]
+        tokens = doc_tokenizer.stats.stats["tokens"].total
 
         pd.DataFrame(chunk).to_csv(f"{args.output_local_folder}/{chunk_i:05d}.csv", index=False)
         
         print(f"Tokens {tokens}")
 
-        return tokens < args.stop_num_tokens
+        return tokens < args.stop_num_tokens, tokens
 
 
     async def send_request(sample: Any, client: AsyncInferenceClient) -> Any:
@@ -196,4 +192,4 @@ if __name__ == "__main__":
         print("Done!")
 
 
-    generate_data(args.tgi, reader, writer, send_request, closer=closer, max_input_size=20000)
+    generate_data(args.tgi, reader, writer, send_request, closer=closer, total_tqdm=args.stop_num_tokens, max_input_size=20000)

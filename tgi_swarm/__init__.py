@@ -1,6 +1,8 @@
 import asyncio
 import multiprocessing.queues
 import os
+import requests
+import time
 from collections import defaultdict
 from dataclasses import dataclass
 from math import ceil
@@ -8,11 +10,22 @@ from multiprocessing import Process, Queue
 from typing import Annotated, Callable, Union, List, Optional, Any
 
 import tyro
-from huggingface_hub import AsyncInferenceClient
+from huggingface_hub import AsyncInferenceClient, get_session
 from tqdm import tqdm
 
-STOP_SEQ = ["User:", "###", "<|endoftext|>"]
 
+def human_format(num: float, billions: bool = False, divide_by_1024: bool = False) -> str:
+    if abs(num) < 1:
+        return "{:.3g}".format(num)
+    SIZES = ["", "K", "M", "G", "T", "P", "E"]
+    num = float("{:.3g}".format(num))
+    magnitude = 0
+    i = 0
+    while abs(num) >= 1000 and i < len(SIZES) - 1:
+        magnitude += 1
+        num /= 1000.0 if not divide_by_1024 else 1024.0
+        i += 1
+    return "{}{}".format("{:f}".format(num).rstrip("0").rstrip("."), SIZES[magnitude])
 
 @dataclass
 class TGIConfig:
@@ -22,8 +35,8 @@ class TGIConfig:
 
     batch_size: Annotated[int, tyro.conf.arg(aliases=["-bs"])] = 250
     """Individual batch size"""
-    instances: Annotated[int, tyro.conf.arg(aliases=["-i"])] = 32
-    """Number of model instances"""
+    # instances: Annotated[int, tyro.conf.arg(aliases=["-i"])] = 32
+    # """Number of model instances"""
     endpoint: Annotated[str, tyro.conf.arg(aliases=["-e"])] = "hosts.txt"
     """Model endpoint. Can be path to file with list of endpoints"""
     start: Annotated[int, tyro.conf.arg(aliases=["-s"])] = 0
@@ -68,7 +81,7 @@ def mp_worker(*largs):
     asyncio.run(mp_worker_async(*largs))
 
 
-def load_endpoints(endpoint_val: Union[str, List[str]]):
+def load_endpoints(endpoint_val: Union[str, List[str]]) -> List[str]:
     """ Return list of endpoints from either a file or a comma separated string
     
     Args:
@@ -78,8 +91,25 @@ def load_endpoints(endpoint_val: Union[str, List[str]]):
         List[str]: list of endpoints (e.g. ["http://26.0.154.245:13120"])
     """
     if os.path.isfile(endpoint_val):
-        return open(endpoint_val).read().splitlines()
-    return endpoint_val.split(",")
+        end_points = open(endpoint_val).read().splitlines()
+    else:
+        end_points = endpoint_val.split(",")
+    healthy_end_points = []
+    for end_point in end_points:
+        try:
+            response = get_session().get(f"{end_point}/health")
+        except requests.exceptions.ConnectionError:
+            print(f"Endpoint {end_point} is unhealthy")
+            continue
+        if response.status_code == 200:
+            healthy_end_points.append(end_point)
+        else:
+            print(f"Endpoint {end_point} is unhealthy")
+    if os.path.isfile(endpoint_val):
+        print(f"Updating endpoints file {endpoint_val} with {','.join(healthy_end_points)}")
+        with open(endpoint_val, "w") as f:
+            f.write("\n".join(healthy_end_points))
+    return healthy_end_points
 
 
 def generate_data(args: TGIConfig,
@@ -88,6 +118,7 @@ def generate_data(args: TGIConfig,
                   send_request: Callable[[Any, AsyncInferenceClient], Any],
                   closer: Optional[Callable]=None,
                   total_input: Optional[int]=None,
+                  total_tqdm: Optional[int]=None,
                   max_input_size: int=0):
     """ Control the swarm of workers to generate data
     
@@ -103,12 +134,13 @@ def generate_data(args: TGIConfig,
                 chunk_i (int): chunk index
                 total_nr_chunks (int): total number of chunks
 
-        total_input (Optional[int], optional): total number of inputs. Defaults to None.
+        total_input (Optional[int], optional): total number of input samples. Defaults to None. Used for saving/tqdm
         max_input_size (int, optional): max size of input queue. Defaults to 0.
+        total_tqdm (Optional[int]): total length of the tqdm, used instead of total_input if returning advance with writer
     """
     endpoints = load_endpoints(args.endpoint)
     print(f"Loaded {len(endpoints)} endpoints: {', '.join(endpoints)}")
-    num_instances = args.instances
+    num_instances = len(endpoints)
 
     print("Preparing data")
     # input data
@@ -134,7 +166,8 @@ def generate_data(args: TGIConfig,
     # get results and save chunks
     workers_completed = 0
     results = defaultdict(list)
-    with tqdm(total=total_input, initial=args.start * checkpoint_chunk_size) as pbar:
+    current_time = time.time()
+    with tqdm(total=total_input if total_input else total_tqdm, initial=args.start * checkpoint_chunk_size) as pbar:
         while True:
             generated_textbook = output_queue.get()
             # check if we are done
@@ -144,16 +177,24 @@ def generate_data(args: TGIConfig,
                     break
                 else:
                     continue
-            pbar.update()
             # store generated textbook in corresponding list
+            pbar.update()
             chunk_i = int(generated_textbook["index"]) // checkpoint_chunk_size
             results[chunk_i].append(generated_textbook)
             # check if it is complete
             if len(results[chunk_i]) == checkpoint_chunk_size:  # current chunk is complete
                 sorted_res = sorted(results.pop(chunk_i), key=lambda x: int(x["index"]))
-                should_continue = writer(sorted_res, chunk_i, total_nr_chunks)
+                results = writer(sorted_res, chunk_i, total_nr_chunks)
+                if len(results) == 2:
+                    should_continue, update_size = results
+                else:
+                    should_continue = True
+                    update_size = None
                 if should_continue is False:
                     break
+                if update_size:
+                    pbar.desc = f"{human_format(float(update_size)/(time.time() - current_time))}/s"
+                    current_time = time.time()
     if results:
         for chunk_i, res in results.items():
             if res:
