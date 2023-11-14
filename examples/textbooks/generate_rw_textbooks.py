@@ -69,10 +69,11 @@ if __name__ == "__main__":
     args = tyro.cli(Args, use_underscores=True)
     pprint(args)
     os.makedirs(args.output_local_folder, exist_ok=True)
-    3
-    s
     doc_tokenizer = DocumentTokenizer(
-            ,
+            output_folder=S3InputDataFolder(
+                path=f"{args.s3_tmp_prefix}/{args.output_filename}/tokenized",
+                local_path=f"{args.output_local_folder}/{args.output_filename}/tokenized",
+            ),
             save_filename=args.output_filename,
             shuffle=False,
             # save_loss_metadata=False,
