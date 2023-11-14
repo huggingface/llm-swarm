@@ -21,7 +21,7 @@ class Args:
     """Name of the column containing the prompt"""
     temperature: Annotated[float, tyro.conf.arg(aliases=["-t"])] = 1.0
     """Generation temperature"""
-    max_new_tokens: Annotated[int, tyro.conf.arg(aliases=["-toks"])] = 200
+    max_new_tokens: Annotated[int, tyro.conf.arg(aliases=["-toks"])] = 1500
     """Max new tokens"""
     format_prompt: bool = True
     """Whether to format prompt"""
@@ -176,10 +176,13 @@ if __name__ == "__main__":
     args = tyro.cli(Args, use_underscores=True)
     pprint(args)
     os.makedirs(args.output_folder, exist_ok=True)
+    rw = load_dataset("Anthropic/hh-rlhf", split="train")
+    NUM_SAMPLES = len(rw)
+
 
     def reader(input_queue, start_index):
         print(f"Loading dataset")
-        rw = load_dataset("Anthropic/hh-rlhf", split="train").select(range(64))
+        rw = load_dataset("Anthropic/hh-rlhf", split="train").select(range(NUM_SAMPLES))
 
         def extract(example):
             # Extract the "Human:" prompts
@@ -251,4 +254,4 @@ if __name__ == "__main__":
 
         return sample
 
-    generate_data(args.tgi, reader, writer, send_request, max_input_size=20000)
+    generate_data(args.tgi, reader, writer, send_request, total_input=NUM_SAMPLES, max_input_size=20000)
