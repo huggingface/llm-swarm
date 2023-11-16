@@ -31,11 +31,10 @@ if __name__ == "__main__":
     args = tyro.cli(Args, use_underscores=True)
     pprint(args)
     os.makedirs(args.output_folder, exist_ok=True)
-    NUM_SAMPLES = 1024
 
     def reader(input_queue, start_index):
         print(f"Loading dataset")
-        rw = load_dataset("Anthropic/hh-rlhf", split="train").select(range(NUM_SAMPLES))
+        rw = load_dataset("Anthropic/hh-rlhf", split="train").select(range(64))
 
         def extract(example):
             # Extract the "Human:" prompts
@@ -84,4 +83,5 @@ if __name__ == "__main__":
         sample["continuation"] = res
         return sample
 
-    generate_data(args.tgi, reader, writer, send_request, total_input=NUM_SAMPLES, max_input_size=20000)
+    generate_data(args.tgi, reader, writer, send_request, 0, max_input_size=20000)
+    
