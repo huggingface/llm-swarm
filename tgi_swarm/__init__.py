@@ -6,7 +6,9 @@ from dataclasses import dataclass
 from math import ceil
 from multiprocessing import Process, Queue
 import shlex
+import signal
 import subprocess
+import sys
 from typing import Annotated, Callable, Union, List, Optional, Any
 import time
 import uuid
@@ -172,6 +174,13 @@ def generate_data(args: TGIConfig,
             f.write(slurm_template)
         job_ids = [run_command(f"sbatch --parsable {slurm_path}") for _ in range(args.instances)]
         print(f"Slurm Job ID: {job_ids}")
+        def cleanup_function(signum, frame):
+            for job_id in job_ids:
+                run_command(f"scancel {job_id}")
+            print(f"TGI instances terminated")
+            sys.exit(0)
+        signal.signal(signal.SIGINT, cleanup_function)  # Handle Ctrl+C
+        signal.signal(signal.SIGTERM, cleanup_function) # Handle termination requests
         endpoints = load_endpoints(slurm_host_path, args.instances)
     else:
         endpoints = load_endpoints(args.endpoint, args.instances)
@@ -254,8 +263,3 @@ def generate_data(args: TGIConfig,
         reader_p.close()
     except ValueError:
         reader_p.terminate()
-
-    if args.manage_tgi_instances:
-        for job_id in job_ids:
-            run_command(f"scancel {job_id}")
-        print(f"TGI instances terminated")
