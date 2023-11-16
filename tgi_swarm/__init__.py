@@ -1,13 +1,19 @@
 import asyncio
 import multiprocessing.queues
 import os
-import requests
-import time
 from collections import defaultdict
 from dataclasses import dataclass
 from math import ceil
 from multiprocessing import Process, Queue
+import shlex
+import signal
+import subprocess
+import sys
 from typing import Annotated, Callable, Union, List, Optional, Any
+import time
+import uuid
+import requests
+
 
 import tyro
 from huggingface_hub import AsyncInferenceClient, get_session
@@ -35,17 +41,31 @@ class TGIConfig:
 
     batch_size: Annotated[int, tyro.conf.arg(aliases=["-bs"])] = 250
     """Individual batch size"""
-    # instances: Annotated[int, tyro.conf.arg(aliases=["-i"])] = 32
-    # """Number of model instances"""
+    instances: Annotated[int, tyro.conf.arg(aliases=["-i"])] = 2
+    """Number of model instances"""
     endpoint: Annotated[str, tyro.conf.arg(aliases=["-e"])] = "hosts.txt"
     """Model endpoint. Can be path to file with list of endpoints"""
     start: Annotated[int, tyro.conf.arg(aliases=["-s"])] = 0
     """Start index (in terms of chunks of size instances*batch_size)"""
     checkpoint_size: Annotated[int, tyro.conf.arg(aliases=["-csize"])] = 5000
     """Save partial results ever checkpoint_size generations"""
+    manage_tgi_instances: Annotated[bool, tyro.conf.arg(aliases=["-r"])] = False
+    """Spin up and terminate TGI instances when the generation is done"""
+    slurm_template_path: Annotated[str, tyro.conf.arg(aliases=["-slurm"])] = "tgi_template.slurm"
+    """Slurm template file path"""
 
 
 SENTINEL = None
+
+
+def run_command(command: str):
+    command_list = shlex.split(command)
+    print(f"running {command}")
+    fd = subprocess.Popen(command_list, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    output, errors = fd.communicate()
+    return_code = fd.returncode
+    assert return_code == 0, f"Command failed with error: {errors.decode('utf-8')}"
+    return output.decode("utf-8").strip()
 
 
 async def requests_worker(
@@ -81,35 +101,41 @@ def mp_worker(*largs):
     asyncio.run(mp_worker_async(*largs))
 
 
-def load_endpoints(endpoint_val: Union[str, List[str]]) -> List[str]:
-    """ Return list of endpoints from either a file or a comma separated string
+def load_endpoints(endpoint_val: Union[str, List[str]], num_instances: int = 1) -> List[str]:
+    """ Return list of endpoints from either a file or a comma separated string.
+    It also checks if the endpoints are reachable.
     
     Args:
         endpoint_val (Union[str, List[str]]): either a file path or a comma separated string
+        num_instances (int, optional): number of instances. Defaults to 1.
     
     Returns:
         List[str]: list of endpoints (e.g. ["http://26.0.154.245:13120"])
     """
-    if os.path.isfile(endpoint_val):
-        end_points = open(endpoint_val).read().splitlines()
-    else:
-        end_points = endpoint_val.split(",")
-    healthy_end_points = []
-    for end_point in end_points:
+    endpoints = None
+    while endpoints is None:
         try:
-            response = get_session().get(f"{end_point}/health")
-        except requests.exceptions.ConnectionError:
-            print(f"Endpoint {end_point} is unhealthy")
-            continue
-        if response.status_code == 200:
-            healthy_end_points.append(end_point)
-        else:
-            print(f"Endpoint {end_point} is unhealthy")
-    if os.path.isfile(endpoint_val):
-        print(f"Updating endpoints file {endpoint_val} with {','.join(healthy_end_points)}")
-        with open(endpoint_val, "w") as f:
-            f.write("\n".join(healthy_end_points))
-    return healthy_end_points
+            if endpoint_val.endswith(".txt"):
+                endpoints = open(endpoint_val).read().splitlines()
+            else:
+                endpoints = endpoint_val.split(",")
+            assert len(endpoints) == num_instances # could read an empty file
+            # due to race condition (slurm writing & us reading)
+        except Exception as e:
+            print(f"Attempting to load endpoints... error: {e}")
+            time.sleep(10)
+    print("obtained endpoints", endpoints)
+    for endpoint in endpoints:
+        connected = False
+        while not connected:
+            try:
+                response = get_session().get(f"{endpoint}/health")
+                print(f"Connected to {endpoint}")
+                connected = True
+            except requests.exceptions.ConnectionError:
+                print(f"Attempting to reconnect to {endpoint}...")
+                time.sleep(10)
+    return endpoints
 
 
 def generate_data(args: TGIConfig,
@@ -136,11 +162,30 @@ def generate_data(args: TGIConfig,
 
         total_input (Optional[int], optional): total number of input samples. Defaults to None. Used for saving/tqdm
         max_input_size (int, optional): max size of input queue. Defaults to 0.
-        total_tqdm (Optional[int]): total length of the tqdm, used instead of total_input if returning advance with writer
     """
-    endpoints = load_endpoints(args.endpoint)
+    if args.manage_tgi_instances:
+        with open(args.slurm_template_path) as f:
+            slurm_template = f.read()
+        filename = str(uuid.uuid4())
+        slurm_path = os.path.join("slurm", f"{filename}.slurm")
+        slurm_host_path = os.path.join("slurm", f"{filename}_host.txt")
+        slurm_template = slurm_template.replace(r"{{slurm_hosts_path}}", slurm_host_path)
+        with open(os.path.join("slurm", f"{filename}.slurm"), "w") as f:
+            f.write(slurm_template)
+        job_ids = [run_command(f"sbatch --parsable {slurm_path}") for _ in range(args.instances)]
+        print(f"Slurm Job ID: {job_ids}")
+        def cleanup_function(signum, frame):
+            for job_id in job_ids:
+                run_command(f"scancel {job_id}")
+            print(f"TGI instances terminated")
+            sys.exit(0)
+        signal.signal(signal.SIGINT, cleanup_function)  # Handle Ctrl+C
+        signal.signal(signal.SIGTERM, cleanup_function) # Handle termination requests
+        endpoints = load_endpoints(slurm_host_path, args.instances)
+    else:
+        endpoints = load_endpoints(args.endpoint, args.instances)
     print(f"Loaded {len(endpoints)} endpoints: {', '.join(endpoints)}")
-    num_instances = len(endpoints)
+    num_instances = args.instances
 
     print("Preparing data")
     # input data

@@ -28,25 +28,17 @@ if [ -z "$HF_TOKEN" ]; then
 fi
 
 export PORT=$(unused_port)
-#export PORT=25677
-#agent_port=$(unused_port)
-#master_port=$(unused_port)
-
-#envsubst < /fsx/olivier_dehaene/configs/base-config.river > /fsx/olivier_dehaene/configs/config-$SLURM_JOB_ID.river
-#AGENT_MODE=flow /fsx/olivier_dehaene/grafana-agent-linux-amd64 run /fsx/olivier_dehaene/configs/config-$SLURM_JOB_ID.river --storage.path /fsx/olivier_dehaene/agent-data/$SLURM_JOB_ID --server.http.listen-addr "127.0.0.1:$agent_port" &
-
 export MODEL_PROMPT_TEMPLATE="<s>{{#each messages}}{{#ifUser}}[INST] {{#if @first}}{{#if @root.preprompt}}{{@root.preprompt}}\n{{/if}}{{/if}} {{content}} [/INST]{{/ifUser}}{{#ifAssistant}}{{content}}</s> {{/ifAssistant}}{{/each}}"
 
 
-rm -f $PWD/hosts.txt
-touch $PWD/hosts.txt
+touch {{slurm_hosts_path}}
 
 # for each node
 for node in $(scontrol show hostnames $SLURM_JOB_NODELIST); do
     # generate a unique unused port for each node
     PORT=$(unused_port)
     IP_ADDRESS=$(srun --nodes=1 --nodelist=$node hostname -I | awk '{print $1}')
-    echo "http://$IP_ADDRESS:$PORT" >> $PWD/hosts.txt 
+    echo "http://$IP_ADDRESS:$PORT" >> {{slurm_hosts_path}} 
 
     # run the container
     sudo docker run \
