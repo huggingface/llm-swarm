@@ -114,13 +114,13 @@ def load_endpoints(endpoint_val: Union[str, List[str]], num_instances: int = 1) 
     while endpoints is None:
         try:
             if endpoint_val.endswith(".txt"):
-                endpoint = open(endpoint_val).read().splitlines()
+                endpoints = open(endpoint_val).read().splitlines()
             else:
-                endpoint = endpoint_val.split(",")
-            assert len(endpoint[0]) == num_instances # could read an empty file
+                endpoints = endpoint_val.split(",")
+            assert len(endpoints) == num_instances # could read an empty file
             # due to race condition (slurm writing & us reading)
-        except:
-            print("Attempting to load endpoints...")
+        except Exception as e:
+            print(f"Attempting to load endpoints... error: {e}")
             time.sleep(10)
     print("obtained endpoints", endpoints)
     for endpoint in endpoints:
