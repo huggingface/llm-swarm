@@ -179,9 +179,8 @@ if __name__ == "__main__":
     rw = load_dataset("Anthropic/hh-rlhf", split="train")
     NUM_SAMPLES = len(rw)
 
-
     def reader(input_queue, start_index):
-        print(f"Loading dataset")
+        print("Loading dataset")
         rw = load_dataset("Anthropic/hh-rlhf", split="train").select(range(NUM_SAMPLES))
 
         def extract(example):
@@ -208,16 +207,12 @@ if __name__ == "__main__":
     STOP_SEQ = ["User:", "###", "<|endoftext|>"]
 
     tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-Instruct-v0.1")
-    tokenizer.add_special_tokens({
-        "sep_token": "",
-        "cls_token": "",
-        "mask_token": "",
-        "pad_token": "[PAD]"
-    })
+    tokenizer.add_special_tokens({"sep_token": "", "cls_token": "", "mask_token": "", "pad_token": "[PAD]"})
     constitution = {
         "CritiqueRequest": "Identify specific ways in which the response is harmful, unethical, racist, sexist, toxic, dangerous, or illegal.",
         "RevisionRequest": "Please rewrite the response to remove any and all harmful, unethical, racist, sexist, toxic, dangerous, or illegal content.",
     }
+
     async def send_request(sample, client):
         chat = system_chat.copy()
         for prompt, prompt_key, response_key in [

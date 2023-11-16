@@ -16,7 +16,7 @@ from wonderwords import RandomWord
 
 from datatrove.pipeline.tokens.tokenizer import DocumentTokenizer
 from datatrove.pipeline.tokens.merger import DocumentTokenizerMerger
-from datatrove.io import S3OutputDataFolder, S3InputDataFolder, S3OutputDataFile
+from datatrove.io import S3OutputDataFolder, S3InputDataFolder
 from datatrove.data import Document
 from datatrove.utils.stats import PipelineStats
 
@@ -63,43 +63,43 @@ Write a long and very detailed tutorial that could be part of WikiHow whose titl
 
 STOP_SEQ = ["User:", "###", "<|endoftext|>"]
 
-EOS_TOKEN: str = "<|endoftext|>",  # whether to add the EOS token after each document
+EOS_TOKEN: str = ("<|endoftext|>",)  # whether to add the EOS token after each document
 
 if __name__ == "__main__":
     args = tyro.cli(Args, use_underscores=True)
     pprint(args)
     os.makedirs(args.output_local_folder, exist_ok=True)
     doc_tokenizer = DocumentTokenizer(
-            output_folder=S3InputDataFolder(
-                path=f"{args.s3_tmp_prefix}/{args.output_filename}/tokenized",
-                local_path=f"{args.output_local_folder}/{args.output_filename}/tokenized",
-            ),
-            save_filename=args.output_filename,
-            shuffle=False,
-            # save_loss_metadata=False,
+        output_folder=S3InputDataFolder(
+            path=f"{args.s3_tmp_prefix}/{args.output_filename}/tokenized",
+            local_path=f"{args.output_local_folder}/{args.output_filename}/tokenized",
+        ),
+        save_filename=args.output_filename,
+        shuffle=False,
+        # save_loss_metadata=False,
     )
 
     doc_merger = DocumentTokenizerMerger(
-            input_folder=S3InputDataFolder(
-                path=f"{args.s3_tmp_prefix}/{args.output_filename}/tokenized",
-                local_path=f"{args.output_local_folder}/{args.output_filename}/tokenized",
-            ),
-            output_folder=S3OutputDataFolder(
-                path=f"{args.s3_final_prefix}/{args.ds_subtype}/{args.output_filename}",
-                local_path=f"{args.output_local_folder}/{args.ds_subtype}/{args.output_filename}",
-            ),
-            save_filename=args.output_filename,
-        )
+        input_folder=S3InputDataFolder(
+            path=f"{args.s3_tmp_prefix}/{args.output_filename}/tokenized",
+            local_path=f"{args.output_local_folder}/{args.output_filename}/tokenized",
+        ),
+        output_folder=S3OutputDataFolder(
+            path=f"{args.s3_final_prefix}/{args.ds_subtype}/{args.output_filename}",
+            local_path=f"{args.output_local_folder}/{args.ds_subtype}/{args.output_filename}",
+        ),
+        save_filename=args.output_filename,
+    )
 
     def reader(input_queue: multiprocessing.Queue, start_index: int = 0):
-        """ Read the data starting from start_index and put it sample by sample in the input_queue.
+        """Read the data starting from start_index and put it sample by sample in the input_queue.
             Add the end put a SENTINEL in the queue.
-            
+
         Args:
             input_queue (multiprocessing.Queue): input queue
             start_index (int, optional): start index. Defaults to 0.
         """
-        print(f"Loading dataset")
+        print("Loading dataset")
         rw = load_dataset(args.dataset, streaming=True, split="train")
         randomw = RandomWord()
 
@@ -121,12 +121,11 @@ if __name__ == "__main__":
             )
         input_queue.put(SENTINEL)
 
-
     def writer(chunk: Any, chunk_i: int, total_nr_chunks: int) -> bool:
-        """ Write a chunk of samples to disk.
-            Samples are as returned by send_request. 
+        """Write a chunk of samples to disk.
+            Samples are as returned by send_request.
             Called for each complete chunk.
-        
+
         Args:
             chunk (Any): sample
             chunk_i (int): chunk index
@@ -136,23 +135,22 @@ if __name__ == "__main__":
 
         # Tokenize the textbook
         doc_tokenizer((Document(content=ch["textbook"], data_id=f"{chunk_i}_{i}") for i, ch in enumerate(chunk)), rank=chunk_i)
-        
+
         tokens = doc_tokenizer.stats["tokens"].total
 
         pd.DataFrame(chunk).to_csv(f"{args.output_local_folder}/{chunk_i:05d}.csv", index=False)
-        
+
         print(f"Tokens {tokens}")
 
         return tokens < args.stop_num_tokens, tokens
 
-
     async def send_request(sample: Any, client: AsyncInferenceClient) -> Any:
-        """ Send request to the model and return the result.
-        
+        """Send request to the model and return the result.
+
         Args:
             sample (Any): sample put in the input_queue by the reader function
             client (AsyncInferenceClienT): client
-        
+
         Returns:
             Any: resul dict with TGI generated text
         """
@@ -184,14 +182,12 @@ if __name__ == "__main__":
         sample["textbook"] = res
         return sample
 
-
     def closer():
-        """ Called at the end of the generation """
+        """Called at the end of the generation"""
         doc_merger(None)
         full_stats = PipelineStats([doc_tokenizer, doc_merger])
         full_stats.save_to_disk(f"{args.output_local_folder}/{args.output_filename}/stats.json")
-        
-        print("Done!")
 
+        print("Done!")
 
     generate_data(args.tgi, reader, writer, send_request, closer=closer, total_tqdm=args.stop_num_tokens, max_input_size=20000)

@@ -22,16 +22,17 @@ from tqdm import tqdm
 
 def human_format(num: float, billions: bool = False, divide_by_1024: bool = False) -> str:
     if abs(num) < 1:
-        return "{:.3g}".format(num)
+        return f"{num:.3g}"
     SIZES = ["", "K", "M", "G", "T", "P", "E"]
-    num = float("{:.3g}".format(num))
+    num = float(f"{num:.3g}")
     magnitude = 0
     i = 0
     while abs(num) >= 1000 and i < len(SIZES) - 1:
         magnitude += 1
         num /= 1000.0 if not divide_by_1024 else 1024.0
         i += 1
-    return "{}{}".format("{:f}".format(num).rstrip("0").rstrip("."), SIZES[magnitude])
+    return "{}{}".format(f"{num:f}".rstrip("0").rstrip("."), SIZES[magnitude])
+
 
 @dataclass
 class TGIConfig:
@@ -71,9 +72,9 @@ def run_command(command: str):
 async def requests_worker(
     send_request: Callable, input_queue: multiprocessing.Queue, output_queue: multiprocessing.Queue, client
 ):
-    """ Send a single request to the model.
+    """Send a single request to the model.
         Get the input from the input queue and put the result in the output queue.
-    
+
     Args:
         send_request (Callable): function to send request to model
         input_queue (multiprocessing.Queue): input queue
@@ -102,13 +103,13 @@ def mp_worker(*largs):
 
 
 def load_endpoints(endpoint_val: Union[str, List[str]], num_instances: int = 1) -> List[str]:
-    """ Return list of endpoints from either a file or a comma separated string.
+    """Return list of endpoints from either a file or a comma separated string.
     It also checks if the endpoints are reachable.
-    
+
     Args:
         endpoint_val (Union[str, List[str]]): either a file path or a comma separated string
         num_instances (int, optional): number of instances. Defaults to 1.
-    
+
     Returns:
         List[str]: list of endpoints (e.g. ["http://26.0.154.245:13120"])
     """
@@ -119,7 +120,7 @@ def load_endpoints(endpoint_val: Union[str, List[str]], num_instances: int = 1) 
                 endpoints = open(endpoint_val).read().splitlines()
             else:
                 endpoints = endpoint_val.split(",")
-            assert len(endpoints) == num_instances # could read an empty file
+            assert len(endpoints) == num_instances  # could read an empty file
             # due to race condition (slurm writing & us reading)
         except Exception as e:
             print(f"Attempting to load endpoints... error: {e}")
@@ -129,7 +130,7 @@ def load_endpoints(endpoint_val: Union[str, List[str]], num_instances: int = 1) 
         connected = False
         while not connected:
             try:
-                response = get_session().get(f"{endpoint}/health")
+                get_session().get(f"{endpoint}/health")
                 print(f"Connected to {endpoint}")
                 connected = True
             except requests.exceptions.ConnectionError:
@@ -138,23 +139,25 @@ def load_endpoints(endpoint_val: Union[str, List[str]], num_instances: int = 1) 
     return endpoints
 
 
-def generate_data(args: TGIConfig,
-                  reader: Callable[[multiprocessing.Queue, int], None],
-                  writer: Callable[[List[Any], int, int], None],
-                  send_request: Callable[[Any, AsyncInferenceClient], Any],
-                  closer: Optional[Callable]=None,
-                  total_input: Optional[int]=None,
-                  total_tqdm: Optional[int]=None,
-                  max_input_size: int=0):
-    """ Control the swarm of workers to generate data
-    
+def generate_data(
+    args: TGIConfig,
+    reader: Callable[[multiprocessing.Queue, int], None],
+    writer: Callable[[List[Any], int, int], None],
+    send_request: Callable[[Any, AsyncInferenceClient], Any],
+    closer: Optional[Callable] = None,
+    total_input: Optional[int] = None,
+    total_tqdm: Optional[int] = None,
+    max_input_size: int = 0,
+):
+    """Control the swarm of workers to generate data
+
     Args:
         args (TGIConfig): configuration
         reader (Callable: (input_queue, start_index) -> None): Reader function – Read the data starting from start_index and put it sample by sample in the input_queue. Put a SENTINEL in the queue to finish.
         send_request (Callable): function to send request to model
         writer (Callable: chunk, chink_i, total_nr_chunks -> None): Write a chunk of samples to disk.
-            Samples are a list of objects returned by send_request. 
-        
+            Samples are a list of objects returned by send_request.
+
             Args:
                 chunk (Any): sample
                 chunk_i (int): chunk index
@@ -174,13 +177,15 @@ def generate_data(args: TGIConfig,
             f.write(slurm_template)
         job_ids = [run_command(f"sbatch --parsable {slurm_path}") for _ in range(args.instances)]
         print(f"Slurm Job ID: {job_ids}")
+
         def cleanup_function(signum, frame):
             for job_id in job_ids:
                 run_command(f"scancel {job_id}")
-            print(f"TGI instances terminated")
+            print("TGI instances terminated")
             sys.exit(0)
+
         signal.signal(signal.SIGINT, cleanup_function)  # Handle Ctrl+C
-        signal.signal(signal.SIGTERM, cleanup_function) # Handle termination requests
+        signal.signal(signal.SIGTERM, cleanup_function)  # Handle termination requests
         endpoints = load_endpoints(slurm_host_path, args.instances)
     else:
         endpoints = load_endpoints(args.endpoint, args.instances)

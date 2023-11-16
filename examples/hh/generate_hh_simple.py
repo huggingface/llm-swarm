@@ -34,7 +34,7 @@ if __name__ == "__main__":
     NUM_SAMPLES = 1024
 
     def reader(input_queue, start_index):
-        print(f"Loading dataset")
+        print("Loading dataset")
         rw = load_dataset("Anthropic/hh-rlhf", split="train").select(range(NUM_SAMPLES))
 
         def extract(example):
