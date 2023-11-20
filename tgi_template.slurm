@@ -43,7 +43,7 @@ for node in $(scontrol show hostnames $SLURM_JOB_NODELIST); do
     sudo docker run \
         --gpus "\"device=$CUDA_VISIBLE_DEVICES"\" --shm-size 1g \
         -v $volume:/data -p $PORT:80 \
-        ghcr.io/huggingface/text-generation-inference \
+        ghcr.io/huggingface/text-generation-inference:1.1.0 \
         --model-id $model --max-concurrent-requests 530 --max-total-tokens 8192 --max-input-length 7168 --max-batch-prefill-tokens 7168 &  # run in background
 done
 
