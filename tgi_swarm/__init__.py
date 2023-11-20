@@ -113,8 +113,8 @@ def load_endpoints(endpoint_val: Union[str, List[str]], num_instances: int = 1) 
     Returns:
         List[str]: list of endpoints (e.g. ["http://26.0.154.245:13120"])
     """
-    endpoints = None
-    while endpoints is None:
+    trying = True
+    while trying:
         try:
             if endpoint_val.endswith(".txt"):
                 endpoints = open(endpoint_val).read().splitlines()
@@ -122,6 +122,7 @@ def load_endpoints(endpoint_val: Union[str, List[str]], num_instances: int = 1) 
                 endpoints = endpoint_val.split(",")
             assert len(endpoints) == num_instances  # could read an empty file
             # due to race condition (slurm writing & us reading)
+            trying = False
         except Exception as e:
             print(f"Attempting to load endpoints... error: {e}")
             time.sleep(10)
@@ -268,3 +269,6 @@ def generate_data(
         reader_p.close()
     except ValueError:
         reader_p.terminate()
+
+    if args.manage_tgi_instances:
+        cleanup_function(None, None)
