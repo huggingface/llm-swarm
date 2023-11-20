@@ -234,9 +234,9 @@ def generate_data(
             # check if it is complete
             if len(results[chunk_i]) == checkpoint_chunk_size:  # current chunk is complete
                 sorted_res = sorted(results.pop(chunk_i), key=lambda x: int(x["index"]))
-                results = writer(sorted_res, chunk_i, total_nr_chunks)
-                if len(results) == 2:
-                    should_continue, update_size = results
+                writer_data = writer(sorted_res, chunk_i, total_nr_chunks)
+                if writer_data is not None and len(writer_data) == 2:
+                    should_continue, update_size = writer_data
                 else:
                     should_continue = True
                     update_size = None
