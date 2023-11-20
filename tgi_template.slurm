@@ -1,6 +1,5 @@
 #!/bin/bash
 #SBATCH --job-name=tgi-swarm
-#SBATCH --nodes=1
 #SBATCH --partition=production-cluster
 #SBATCH --cpus-per-task=96
 #SBATCH --mem-per-cpu=11G
