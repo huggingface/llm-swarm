@@ -152,6 +152,14 @@ Processing complete.
 
 Then you should be able to see some sample outputs in `output/hh_simple`
 
+
+## Generating data for the entire harmless dataset
+
+```
+python examples/hh/generate_hh.py --instances 8 --m anage_tgi_instances --max_samples=-1
+python merge_data.py --output_dir=output/hh
+```
+
 # Installing TGI from scratch
 
 ```
