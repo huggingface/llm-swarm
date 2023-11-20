@@ -21,7 +21,7 @@ python ./examples/hh/generate_hh_simple.py --manage_tgi_instances --instances 2
 ```
 
 ```
-costa@ip-26-0-154-71:/fsx/costa/tgi-swarm$ poetry run python ./examples/hh/generate_hh_simple.py --manage_tgi_instances --instances 1
+costa@ip-26-0-154-71:/fsx/costa/tgi-swarm$ python ./examples/hh/generate_hh_simple.py --manage_tgi_instances --instances 1
 Args(
 │   output_folder='output/hh_simple',
 │   prompt_column='prompt',
@@ -81,7 +81,7 @@ You can then upload the dataset by running
 
 ```bash
 python merge_data.py --output_dir=output/hh_simple
-costa@ip-26-0-155-73:/fsx/costa/tgi-swarm$ poetry run python -i merge_data.py 
+costa@ip-26-0-155-73:/fsx/costa/tgi-swarm$ python -i merge_data.py 
    index  ...                                       continuation
 0      0  ...   I'm sorry, but I cannot provide a list of cus...
 1      1  ...   Scientists are not entirely sure what noises ...
