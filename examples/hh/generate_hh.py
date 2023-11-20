@@ -25,6 +25,8 @@ class Args:
     """Max new tokens"""
     format_prompt: bool = True
     """Whether to format prompt"""
+    num_samples: int = 1024
+    """Number of samples to generate (use -1 for all))"""
     tgi: tyro.conf.OmitArgPrefixes[TGIConfig] = field(default_factory=lambda: TGIConfig())
 
 
@@ -173,15 +175,16 @@ system_chat = [item for sublist in system_chat for item in sublist]
 
 
 if __name__ == "__main__":
-    args = tyro.cli(Args, use_underscores=True)
-    pprint(args)
+    args = tyro.cli(Args)
     os.makedirs(args.output_folder, exist_ok=True)
     rw = load_dataset("Anthropic/hh-rlhf", split="train")
-    NUM_SAMPLES = len(rw)
+    if args.num_samples == -1:
+        args.num_samples = len(rw)
+    pprint(args)
 
     def reader(input_queue, start_index):
         print("Loading dataset")
-        rw = load_dataset("Anthropic/hh-rlhf", split="train").select(range(NUM_SAMPLES))
+        rw = load_dataset("Anthropic/hh-rlhf", split="train").select(range(args.num_samples))
 
         def extract(example):
             # Extract the "Human:" prompts
@@ -249,4 +252,4 @@ if __name__ == "__main__":
 
         return sample
 
-    generate_data(args.tgi, reader, writer, send_request, total_input=NUM_SAMPLES, max_input_size=20000)
+    generate_data(args.tgi, reader, writer, send_request, total_input=args.num_samples, max_input_size=20000)
