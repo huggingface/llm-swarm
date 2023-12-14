@@ -17,6 +17,7 @@ pip install -e .
 
 ```bash
 pip install -r ./examples/hh/requirements.txt
+export HF_TOKEN=<YOUR_HF_TOKEN>
 python ./examples/hh/generate_hh_simple.py --manage_tgi_instances --instances 2
 ```
 
@@ -80,7 +81,7 @@ The command will automatically start 2 TGI instances on the cluster. It will cre
 You can then upload the dataset by running 
 
 ```bash
-python merge_data.py --output_dir=output/hh_simple
+python merge_data.py --output_folder=output/hh_simple
 costa@ip-26-0-155-73:/fsx/costa/tgi-swarm$ python -i merge_data.py 
    index  ...                                       continuation
 0      0  ...   I'm sorry, but I cannot provide a list of cus...
@@ -157,7 +158,7 @@ Then you should be able to see some sample outputs in `output/hh_simple`
 
 ```
 python examples/hh/generate_hh.py --instances 8 --m anage_tgi_instances --max_samples=-1
-python merge_data.py --output_dir=output/hh
+python merge_data.py --output_folder=output/hh
 ```
 
 # Installing TGI from scratch
