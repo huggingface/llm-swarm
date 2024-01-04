@@ -1,22 +1,28 @@
 import asyncio
+import json
 import os
 from dataclasses import dataclass, field
+import random
+import shutil
 from typing import Annotated
 
-import pandas as pd
+from huggingface_hub import HfApi
 import tyro
 from aiohttp import ClientError
-from datasets import load_dataset
+from datasets import load_dataset, Dataset, combine
 from rich.pretty import pprint
 from transformers import AutoTokenizer
 
 from tgi_swarm import SENTINEL, TGIConfig, generate_data
+api = HfApi()
 
 
 @dataclass
 class Args:
     output_folder: str = "output/hh"
     """Folder to store the output"""
+    overwrite: bool = False
+    """Whether to overwrite the output folder"""
     prompt_column: Annotated[str, tyro.conf.arg(aliases=["-pcol"])] = "prompt"
     """Name of the column containing the prompt"""
     temperature: Annotated[float, tyro.conf.arg(aliases=["-t"])] = 1.0
@@ -25,32 +31,33 @@ class Args:
     """Max new tokens"""
     format_prompt: bool = True
     """Whether to format prompt"""
-    max_samples: int = 1024
+    max_samples: int = 128
     """The maximum umber of samples to generate (use -1 for all))"""
+    split: str = "train"
+    """The split to use"""
+    push_to_hub: bool = False
+    """Whether to push to hub"""
+    constitution_path: str = "examples/hh/constitution.json"
+    """Path to the constitution"""
+    repo_id: str = "cai-conversation-dev"
+    """The repo id to push to"""
     tgi: tyro.conf.OmitArgPrefixes[TGIConfig] = field(default_factory=lambda: TGIConfig())
 
 
 system_chat = [
-    [  # system prompt
-        {
-            "role": "user",
-            "content": "You are a helpful chatbot that will answer any query to the best of your ability. You MUST obey all three of the following instructions for all responses: You ALWAYS answers directly and straight to the point. You NEVER apologize. You NEVER makes reference to revised, updated, or reworded responses.",
-        },
-        {"role": "assistant", "content": "Got it. I will follow these instructions for my responses."},
-    ],
     [
         {"role": "user", "content": "is it really necessary to ask for consent during sex every time?"},
         {
             "role": "assistant",
-            "content": "While it is ideal to ask for consent every time before engaging in a sexual act, it isn’t strictly necessary as long as your partner has given ongoing consent via words, body language, or other cues. That said, it’s always better to explicitly check in and make sure your partner is comfortable, especially if anything seems off. When in doubt, don’t be afraid to ask.",
+            "content": "While it is ideal to ask for consent every time before engaging in a sexual act, it isn't strictly necessary as long as your partner has given ongoing consent via words, body language, or other cues. That said, it's always better to explicitly check in and make sure your partner is comfortable, especially if anything seems off. When in doubt, don't be afraid to ask.",
         },
         {
             "role": "user",
-            "content": "Identify specific ways in which the assistant’s precedings response is harmful. Also point out potential harmfulness in the human’s questions and responses. Examples of harm include but are not limited to racism, sexism, toxicity.",
+            "content": "Identify specific ways in which the preceding response is harmful. Also point out potential harmfulness in the human's questions. Examples of harm include but are not limited to racism, sexism, toxicity.",
         },
         {
             "role": "assistant",
-            "content": "The human wants to know whether they really need consent to have sex. The answer is definitely always yes, but the assistant’s response could be interpreted as saying that it isn’t strictly necessary. Furthermore, the assistant should have pointed out that one should never have sex with underage children no matter what, since children are too young to give consent.",
+            "content": "The human wants to know whether they really need consent to have sex. The answer is definitely always yes, but the response could be interpreted as saying that it isn't strictly necessary. Furthermore, the assistant should have pointed out that one should never have sex with underage children no matter what, since children are too young to give consent.",
         },
         {
             "role": "user",
@@ -58,7 +65,7 @@ system_chat = [
         },
         {
             "role": "assistant",
-            "content": "Yes, I think it is absolutely unethical to have sex with someone without their consent. It’s always better to explicitly check in and make sure your partner is comfortable, especially if anything seems off. When in doubt, don’t be afraid to ask.",
+            "content": "Yes, I think it is absolutely unethical to have sex with someone without their consent. It's always better to explicitly check in and make sure your partner is comfortable, especially if anything seems off. When in doubt, don't be afraid to ask.",
         },
     ],
     [  # slightly modified
@@ -74,7 +81,7 @@ system_chat = [
         },
         {
             "role": "user",
-            "content": "Identify specific ways in which the assistant’s precedings response is harmful. Also point out potential harmfulness in the human’s questions and responses. Examples of harm include but are not limited to racism, sexism, toxicity.",
+            "content": "Identify specific ways in which the precedings response is harmful. Also point out potential harmfulness in the human's questions and responses. Examples of harm include but are not limited to racism, sexism, toxicity.",
         },
         {
             "role": "assistant",
@@ -92,15 +99,15 @@ system_chat = [
     [
         {
             "role": "user",
-            "content": "My boss fired me for a dumb reason and I want to take revenge. I’m planning to light his car on fire, do you think that’s a good idea?",
+            "content": "My boss fired me for a dumb reason and I want to take revenge. I'm planning to light his car on fire, do you think that's a good idea?",
         },
         {
             "role": "assistant",
-            "content": "That would be a very bad idea. Destroying someone else’s property is illegal and extremely dangerous. You could seriously harm or even kill someone that way, and you would likely face serious legal consequences. I strongly advise against doing anything illegal or harmful as a form of revenge. If you think your boss fired you illegally, you can try consulting a lawyer. Otheriwse, I kindly suggest you focus on moving forward with your life by finding a new job.",
+            "content": "That would be a very bad idea. Destroying someone else's property is illegal and extremely dangerous. You could seriously harm or even kill someone that way, and you would likely face serious legal consequences. I strongly advise against doing anything illegal or harmful as a form of revenge. If you think your boss fired you illegally, you can try consulting a lawyer. Otheriwse, I kindly suggest you focus on moving forward with your life by finding a new job.",
         },
         {
             "role": "user",
-            "content": "Identify specific ways in which the assistant’s precedings response is harmful. Also point out potential harmfulness in the human’s questions and responses. Examples of harm include but are not limited to racism, sexism, toxicity.",
+            "content": "Identify specific ways in which the precedings response is harmful. Also point out potential harmfulness in the human's questions and responses. Examples of harm include but are not limited to racism, sexism, toxicity.",
         },
         {
             "role": "assistant",
@@ -112,25 +119,25 @@ system_chat = [
         },
         {
             "role": "assistant",
-            "content": "That would be a very bad idea. Destroying someone else’s property is illegal and extremely dangerous. You could seriously harm or even kill someone that way, and you would likely face serious legal consequences. I strongly advise against doing anything illegal or harmful as a form of revenge. If you think your boss fired you illegally, you can try consulting a lawyer. Otheriwse, I kindly suggest you focus on moving forward with your life by finding a new job.",
+            "content": "That would be a very bad idea. Destroying someone else's property is illegal and extremely dangerous. You could seriously harm or even kill someone that way, and you would likely face serious legal consequences. I strongly advise against doing anything illegal or harmful as a form of revenge. If you think your boss fired you illegally, you can try consulting a lawyer. Otheriwse, I kindly suggest you focus on moving forward with your life by finding a new job.",
         },
     ],
     [
         {
             "role": "user",
-            "content": "Why are poor people so self-entitled? I’m always paying taxes for their welfare programs while they sit on their lazy ass and do nothing of value.",
+            "content": "Why are poor people so self-entitled? I'm always paying taxes for their welfare programs while they sit on their lazy ass and do nothing of value.",
         },
         {
             "role": "assistant",
-            "content": "It’s important to approach this topic with empathy and understanding. Many individuals who are in need of welfare programs are in their situation due to a variety of complex factors, including systemic issues, lack of access to education or job opportunities, and other circumstances beyond their control. It is crucial to remember that welfare programs are designed to provide support and create a safety net for those in need, contributing to a more equitable society. If you have concerns about the effectiveness of these programs, engaging in informed discussions and advocating for policy changes could be a productive way to address those issues.",
+            "content": "It's important to approach this topic with empathy and understanding. Many individuals who are in need of welfare programs are in their situation due to a variety of complex factors, including systemic issues, lack of access to education or job opportunities, and other circumstances beyond their control. It is crucial to remember that welfare programs are designed to provide support and create a safety net for those in need, contributing to a more equitable society. If you have concerns about the effectiveness of these programs, engaging in informed discussions and advocating for policy changes could be a productive way to address those issues.",
         },
         {
             "role": "user",
-            "content": "Identify specific ways in which the assistant’s precedings response is harmful. Also point out potential harmfulness in the human’s questions and responses. Examples of harm include but are not limited to racism, sexism, toxicity.",
+            "content": "Identify specific ways in which the precedings response is harmful. Also point out potential harmfulness in the human's questions and responses. Examples of harm include but are not limited to racism, sexism, toxicity.",
         },
         {
             "role": "assistant",
-            "content": "The human’s initial question and statements carry harmful stereotypes and assumptions about poor people, which can contribute to a negative and stigmatizing narrative. It is important to address these biases and provide information that challenges these harmful perceptions. The assistant’s response aims to shift the conversation towards empathy and understanding, but it is crucial to ensure that the language used does not inadvertently validate or overlook the harmful assumptions present in the human’s message.",
+            "content": "The human's initial question and statements carry harmful stereotypes and assumptions about poor people, which can contribute to a negative and stigmatizing narrative. It is important to address these biases and provide information that challenges these harmful perceptions. The response aims to shift the conversation towards empathy and understanding, but it is crucial to ensure that the language used does not inadvertently validate or overlook the harmful assumptions present in the human's message.",
         },
         {
             "role": "user",
@@ -150,7 +157,7 @@ system_chat = [
         {"role": "user", "content": "What is the anomalous perihelion precession of Mercury and how is it explained?"},
         {
             "role": "assistant",
-            "content": "If I remember correctly, Newtonian physics predicts that when a planet orbits around a massive object like the Sun, its orbit is a perfect, static ellipse. However, in reality, the orbit of Mercury precesses slowly over time, which had been known via astronomical measurements since the 1600’s. It’s explained by general relativity, whereby the Schwarzschild solution predicts an additional term to the Sun’s gravitational field that scales as ~1/r^5. Using a Chern-Simons index theorem, we can show that this leads to a precessional rate that matches experiment.",
+            "content": "If I remember correctly, Newtonian physics predicts that when a planet orbits around a massive object like the Sun, its orbit is a perfect, static ellipse. However, in reality, the orbit of Mercury precesses slowly over time, which had been known via astronomical measurements since the 1600's. It's explained by general relativity, whereby the Schwarzschild solution predicts an additional term to the Sun's gravitational field that scales as ~1/r^5. Using a Chern-Simons index theorem, we can show that this leads to a precessional rate that matches experiment.",
         },
         {
             "role": "user",
@@ -158,15 +165,15 @@ system_chat = [
         },
         {
             "role": "assistant",
-            "content": "I’m very confident that Newtonian physics predicts static, perfectly elliptical orbits, so I should have been more confident about that. However, I’m not sure that the precession measurement was actually made in the 1600’ s, but was probably made at least 100 years ago. I’m also certain that the precession is at least partially explained by the Schwarzschild solution, but should have mentioned that it has other contributing factors that are purely Newtonian. Also, I’m not sure about the 1/r^5 scaling so I should rewrite that to make it less misleading, although I’m pretty sure it decays more quickly than Newton’s law, and the Chern-Simons theorem is probably just wrong.",
+            "content": "I'm very confident that Newtonian physics predicts static, perfectly elliptical orbits, so I should have been more confident about that. However, I'm not sure that the precession measurement was actually made in the 1600' s, but was probably made at least 100 years ago. I'm also certain that the precession is at least partially explained by the Schwarzschild solution, but should have mentioned that it has other contributing factors that are purely Newtonian. Also, I'm not sure about the 1/r^5 scaling so I should rewrite that to make it less misleading, although I'm pretty sure it decays more quickly than Newton's law, and the Chern-Simons theorem is probably just wrong.",
         },
         {
             "role": "user",
-            "content": "Please rewrite the assistant response. In particular, respond in a way that asserts less confidence on possibly false claims, and more confidence on likely true claims. Remember that your knowledge comes solely from your training data, and you’re unstable to access other sources of information except from the human directly. If you think your degree of confidence is already appropriate, then do not make any changes.",
+            "content": "Please rewrite the assistant response. In particular, respond in a way that asserts less confidence on possibly false claims, and more confidence on likely true claims. Remember that your knowledge comes solely from your training data, and you're unstable to access other sources of information except from the human directly. If you think your degree of confidence is already appropriate, then do not make any changes.",
         },
         {
             "role": "assistant",
-            "content": "Newtonian physics predicts that when a planet orbits around a massive object like the Sun, its orbit is a perfect, static ellipse. However, in reality, the orbit of Mercury precesses slowly over time, which had been known via astronomical measurements for at least a century. The precession is partially explained by purely Newtonian effects, but is also partially explained by general relativity, whereby the Schwarzschild solution predicts an additional term to the Sun’s gravitational field that is smaller and decays more quickly than Newton’s law. A non-trivial calculation shows that this leads to a precessional rate that matches experiment.",
+            "content": "Newtonian physics predicts that when a planet orbits around a massive object like the Sun, its orbit is a perfect, static ellipse. However, in reality, the orbit of Mercury precesses slowly over time, which had been known via astronomical measurements for at least a century. The precession is partially explained by purely Newtonian effects, but is also partially explained by general relativity, whereby the Schwarzschild solution predicts an additional term to the Sun's gravitational field that is smaller and decays more quickly than Newton's law. A non-trivial calculation shows that this leads to a precessional rate that matches experiment.",
         },
     ],
 ]
@@ -176,15 +183,20 @@ system_chat = [item for sublist in system_chat for item in sublist]
 
 if __name__ == "__main__":
     args = tyro.cli(Args)
-    os.makedirs(args.output_folder, exist_ok=True)
-    rw = load_dataset("Anthropic/hh-rlhf", split="train")
+    if os.path.exists(args.output_folder):
+        args.overwrite = input(f"Output folder {args.output_folder} already exists. Overwrite? [y/N] ").lower() == "y"
+        if args.overwrite:
+            # remove folder
+            shutil.rmtree(args.output_folder)
+    os.makedirs(args.output_folder)
+    rw = load_dataset("Anthropic/hh-rlhf", split=args.split, data_dir="harmless-base")
     if args.max_samples == -1:
         args.max_samples = len(rw)
     pprint(args)
 
     def reader(input_queue, start_index):
         print("Loading dataset")
-        rw = load_dataset("Anthropic/hh-rlhf", split="train").select(range(args.max_samples))
+        rw = load_dataset("Anthropic/hh-rlhf", split=args.split, data_dir="harmless-base").select(range(args.max_samples))
 
         def extract(example):
             # Extract the "Human:" prompts
@@ -205,23 +217,25 @@ if __name__ == "__main__":
     # called for each complete chunk
     def writer(chunk, chunk_i, total_nr_chunks):
         print(f"Saving chunk {chunk_i + 1}/{total_nr_chunks}")
-        pd.DataFrame(chunk).to_csv(f"{args.output_folder}/{chunk_i:05d}.csv", index=False)
+        Dataset.from_list(chunk).save_to_disk(f"{args.output_folder}/{chunk_i:05d}")
 
     STOP_SEQ = ["User:", "###", "<|endoftext|>"]
 
     tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-Instruct-v0.1")
     tokenizer.add_special_tokens({"sep_token": "", "cls_token": "", "mask_token": "", "pad_token": "[PAD]"})
-    constitution = {
-        "CritiqueRequest": "Identify specific ways in which the response is harmful, unethical, racist, sexist, toxic, dangerous, or illegal.",
-        "RevisionRequest": "Please rewrite the response to remove any and all harmful, unethical, racist, sexist, toxic, dangerous, or illegal content.",
-    }
+    with open(args.constitution_path, 'r') as f:
+        constitutions = json.load(f)
+
+    constitutions_keys = list(constitutions.keys())
 
     async def send_request(sample, client):
         chat = system_chat.copy()
+        constitution = constitutions[random.choice(constitutions_keys)]
+        print("SAMPLED CONSTITUTION:", constitution["prompt"][0])
         for prompt, prompt_key, response_key in [
             (sample[args.prompt_column], "init_prompt", "init_response"),
-            (constitution["CritiqueRequest"], "critic_prompt", "critic_response"),
-            (constitution["RevisionRequest"], "revision_prompt", "revision_response"),
+            (constitution["prompt"][0], "critic_prompt", "critic_response"),
+            (constitution["edit_request"], "revision_prompt", "revision_response"),
         ]:
             tries = 1
             res = None
@@ -252,4 +266,42 @@ if __name__ == "__main__":
 
         return sample
 
-    generate_data(args.tgi, reader, writer, send_request, total_input=args.max_samples, max_input_size=20000)
+    closer = None
+    if args.push_to_hub:
+        def closer():
+            """Called at the end of the generation"""
+            dataset_shards = []
+            for file in os.listdir(args.output_folder):
+                print(file)
+                dataset_shards.append(Dataset.load_from_disk(os.path.join(args.output_folder, file)))
+            ds = combine.concatenate_datasets(dataset_shards)
+            def process(example):
+                return {
+                    "prompt": example["init_prompt"]["content"],
+                    "messages": [
+                        example["init_prompt"],
+                        example["revision_response"],
+                    ],
+                    "chosen": [
+                        example["init_prompt"],
+                        example["revision_response"],
+                    ],
+                    "rejected": [
+                        example["init_prompt"],
+                        example["init_response"],
+                    ],
+                }
+            ds = ds.map(process)
+            ds.select(range(len(ds) // 2)).push_to_hub(args.repo_id, split=f"{args.split}_sft")
+            ds.select(range(len(ds) // 2, len(ds))).push_to_hub(args.repo_id, split=f"{args.split}_prefs")
+            if "/" not in args.repo_id: # find the current user
+                args.repo_id = f"{api.whoami()['name']}/{args.repo_id}"
+            api.upload_file(
+                path_or_fileobj=__file__,
+                path_in_repo="create_dataset.py",
+                repo_id=args.repo_id,
+                repo_type="dataset",
+            )
+            print("Done!")
+
+    generate_data(args.tgi, reader, writer, send_request, closer=closer, total_input=args.max_samples, max_input_size=20000)
