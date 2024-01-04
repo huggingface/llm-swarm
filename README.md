@@ -10,6 +10,7 @@ Prerequisites:
 
 ```bash
 mkdir -p slurm/logs
+mkdir -p slurm/logs_vllm
 pip install -e .
 ```
 
@@ -134,6 +135,33 @@ This will generate log files in `./slurm/logs` and also `./hosts.txt` with the l
 
 ```bash
 python ./examples/hh/generate_hh_simple.py
+```
+
+If your `slurm` cluster uses Pyxis and Enroot for deploying Docker containers (e.g our H100 cluster), run this instead:
+* TGI:
+```bash
+# deploy TGI
+sbatch tgi_h100.slurm
+# get hostname, this uses the latest created log path
+bash /fsx/loubna/projects/tgi-swarm/get_hostname.sh
+```
+
+* vLLM:
+```bash
+# deploy vLLM
+sbatch vllm_h100.slurm
+# get hostname, this uses the latest created log path
+bash /fsx/loubna/projects/tgi-swarm/get_hostname.sh vllm
+```
+
+This will generate log files in `./slurm/logs` and also `./hosts.txt` (`./slurm/vllm_logs` and also `./hosts_vllm.txt` for vLLM) with the list of nodes used for the job.
+
+```bash
+# tgi
+python ./examples/hh/generate_hh_simple.py --max_samples 50 --manage_tgi_instances  --instances 1
+# vllm
+python ./examples/hh/generate_hh_simple.py --max_samples 50 --use_vllm --output_folder output/hh_simple_vllm
+# --manage_tgi_instances  --instances 1
 ```
 ```
 Loaded 1 endpoints: http://26.0.149.1:45920
