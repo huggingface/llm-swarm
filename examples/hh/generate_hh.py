@@ -226,16 +226,14 @@ if __name__ == "__main__":
     with open(args.constitution_path, 'r') as f:
         constitutions = json.load(f)
 
-    constitutions_keys = list(constitutions.keys())
-
     async def send_request(sample, client):
         chat = system_chat.copy()
-        constitution = constitutions[random.choice(constitutions_keys)]
+        constitution = random.choice(constitutions)
         print("SAMPLED CONSTITUTION:", constitution["prompt"][0])
         for prompt, prompt_key, response_key in [
             (sample[args.prompt_column], "init_prompt", "init_response"),
-            (constitution["prompt"][0], "critic_prompt", "critic_response"),
-            (constitution["edit_request"], "revision_prompt", "revision_response"),
+            (constitution["critic"], "critic_prompt", "critic_response"),
+            (constitution["revision"], "revision_prompt", "revision_response"),
         ]:
             tries = 1
             res = None
