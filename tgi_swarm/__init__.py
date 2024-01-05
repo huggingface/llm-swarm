@@ -227,8 +227,8 @@ def generate_data(
             while not is_job_running(job_id):
                 print(f"Waiting for job {job_id} to start...")
                 time.sleep(10)
-            print("Sleep for 10 more sec while the job runs")
-            time.sleep(10)
+            print("Sleep for 60 more sec while the job runs and instance is up")
+            time.sleep(60)
             output_host = run_command(f"bash {hosts_bash_path}")
             print(f"- Output from hostname retrieval:START_OUTPUT\n{output_host}\nEND_OUTPUT")
 
