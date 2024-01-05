@@ -18,7 +18,7 @@ export PORT=8000:8000
 
 # to turn on TP use `--tensor-parallel-size 8` for example
 # you can cache the container image in /fsx/.../vllm+vllm-openai+latest.sqsh
-srun --container-image='vllm#vllm-openai:latest' \
+srun --container-image='vllm/vllm-openai:latest' \
      --container-env=HUGGING_FACE_HUB_TOKEN,PORT \
      --container-mounts="/scratch:/root/.cache/huggingface" \
      --no-container-mount-home \
