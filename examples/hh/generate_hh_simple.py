@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 from dataclasses import dataclass, field
 from typing import Annotated
@@ -22,6 +23,8 @@ class Args:
     """Generation temperature"""
     max_new_tokens: Annotated[int, tyro.conf.arg(aliases=["-toks"])] = 1500
     """Max new tokens"""
+    max_tokens: Annotated[int, tyro.conf.arg(aliases=["-all_toks"])] = 2500
+    """Max total tokens (needed for vLLM server)"""
     format_prompt: bool = True
     """Whether to format prompt"""
     max_samples: int = 1024
@@ -90,17 +93,32 @@ if __name__ == "__main__":
         tries = 1
         while not res:
             try:
-                res = await client.text_generation(
-                    prompt=rf"<s>[INST] {sample[args.prompt_column]} [\INST]",
-                    max_new_tokens=args.max_new_tokens,
-                    stop_sequences=STOP_SEQ,
-                    temperature=args.temperature,
-                )
-                for stop_seq in STOP_SEQ:
-                    if res.endswith(stop_seq):
-                        res = res[: -len(stop_seq)].rstrip()
+                prompt = rf"<s>[INST] {sample[args.prompt_column]} [\INST]"
+                if not args.tgi.use_vllm:
+                    res = await client.text_generation(
+                        prompt=prompt,
+                        max_new_tokens=args.max_new_tokens,
+                        stop_sequences=STOP_SEQ,
+                        temperature=args.temperature,
+                    )
+                    for stop_seq in STOP_SEQ:
+                        if res.endswith(stop_seq):
+                            res = res[: -len(stop_seq)].rstrip()
+                else:
+                    response = await client.post(
+                        json={
+                            "prompt": prompt,
+                            "temperature": args.temperature,
+                            "max_tokens": args.max_tokens,
+                            "stop": STOP_SEQ,
+                        }
+                    )
+                    res = json.loads(response.decode("utf-8"))["text"][0]
+                    for stop_seq in STOP_SEQ:
+                        if res.endswith(stop_seq):
+                            res = res[: -len(stop_seq)].rstrip()
             # retry on error
-            except ClientError as e:
+            except ClientError or json.decoder.JSONDecodeError as e:
                 if tries == 10:
                     raise e
                 print(f"Error: {e}. Retrying...", flush=True)
