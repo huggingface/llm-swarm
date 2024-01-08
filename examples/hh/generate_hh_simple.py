@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 from dataclasses import dataclass, field
 from typing import Annotated
@@ -22,36 +23,26 @@ class Args:
     """Generation temperature"""
     max_new_tokens: Annotated[int, tyro.conf.arg(aliases=["-toks"])] = 1500
     """Max new tokens"""
+    max_tokens: Annotated[int, tyro.conf.arg(aliases=["-all_toks"])] = 2500
+    """Max total tokens (needed for vLLM server)"""
     format_prompt: bool = True
     """Whether to format prompt"""
     max_samples: int = 1024
     """The maximum number of samples to generate (use -1 for all))"""
     tgi: tyro.conf.OmitArgPrefixes[TGIConfig] = field(default_factory=lambda: TGIConfig())
-    use_textbooks: bool = True
-    """Whether to use textbooks prompts (the prompts have varying sizes ~10 to 800 tokens)"""
 
 
 if __name__ == "__main__":
     args = tyro.cli(Args)
     os.makedirs(args.output_folder, exist_ok=True)
-    if args.use_textbooks:
-        rw = load_dataset("HuggingFaceTB/synthetic_textbooks_subset", split="train")
-    else:
-        rw = load_dataset("Anthropic/hh-rlhf", split="train")
+    rw = load_dataset("Anthropic/hh-rlhf", split="train")
     if args.max_samples == -1:
         args.max_samples = len(rw)
     pprint(args)
 
     def reader(input_queue, start_index):
         print("Loading dataset")
-        if args.use_textbooks:
-            rw = load_dataset(
-                "HuggingFaceTB/synthetic_textbooks_subset", split="train"
-            ).select(range(args.max_samples))
-        else:
-            rw = load_dataset("Anthropic/hh-rlhf", split="train").select(
-                range(args.max_samples)
-            )
+        rw = load_dataset("Anthropic/hh-rlhf", split="train").select(range(args.max_samples))
 
         def extract(example):
             # Extract the "Human:" prompts
@@ -61,15 +52,7 @@ if __name__ == "__main__":
                 if "Human:" in segment:
                     return {"prompt": segment.split(": ")[1]}
 
-        def extract_textbooks(example):
-            text = example["prompt"]
-            prompt = text[: -len("Falcon:")] if text.endswith("Falcon:") else text
-            return {"prompt": prompt}
-
-        if args.use_textbooks:
-            rw = rw.map(extract_textbooks)
-        else:
-            rw = rw.map(extract)
+        rw = rw.map(extract)
 
         for si, sample in enumerate(rw):
             if si < start_index:
@@ -90,17 +73,32 @@ if __name__ == "__main__":
         tries = 1
         while not res:
             try:
-                res = await client.text_generation(
-                    prompt=rf"<s>[INST] {sample[args.prompt_column]} [\INST]",
-                    max_new_tokens=args.max_new_tokens,
-                    stop_sequences=STOP_SEQ,
-                    temperature=args.temperature,
-                )
-                for stop_seq in STOP_SEQ:
-                    if res.endswith(stop_seq):
-                        res = res[: -len(stop_seq)].rstrip()
+                prompt = rf"<s>[INST] {sample[args.prompt_column]} [\INST]"
+                if not args.tgi.use_vllm:
+                    res = await client.text_generation(
+                        prompt=prompt,
+                        max_new_tokens=args.max_new_tokens,
+                        stop_sequences=STOP_SEQ,
+                        temperature=args.temperature,
+                    )
+                    for stop_seq in STOP_SEQ:
+                        if res.endswith(stop_seq):
+                            res = res[: -len(stop_seq)].rstrip()
+                else:
+                    response = await client.post(
+                        json={
+                            "prompt": prompt,
+                            "temperature": args.temperature,
+                            "max_tokens": args.max_tokens,
+                            "stop": STOP_SEQ,
+                        }
+                    )
+                    res = json.loads(response.decode("utf-8"))["text"][0]
+                    for stop_seq in STOP_SEQ:
+                        if res.endswith(stop_seq):
+                            res = res[: -len(stop_seq)].rstrip()
             # retry on error
-            except ClientError as e:
+            except ClientError or json.decoder.JSONDecodeError as e:
                 if tries == 10:
                     raise e
                 print(f"Error: {e}. Retrying...", flush=True)
@@ -116,5 +114,4 @@ if __name__ == "__main__":
         send_request,
         total_input=args.max_samples,
         max_input_size=20000,
-        log_throughput=True,
     )
