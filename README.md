@@ -10,6 +10,7 @@ Prerequisites:
 
 ```bash
 mkdir -p slurm/logs
+mkdir -p slurm/logs_vllm
 pip install -e .
 ```
 
@@ -135,6 +136,54 @@ This will generate log files in `./slurm/logs` and also `./hosts.txt` with the l
 
 ```bash
 python ./examples/hh/generate_hh_simple.py
+```
+
+If your `slurm` cluster uses Pyxis and Enroot for deploying Docker containers (e.g our H100 cluster), run this instead:
+* TGI:
+```bash
+# deploy TGI
+sbatch tgi_h100.slurm
+# get hostname, this uses the latest created log path
+# you may need to run this multiple times until the TGI instance is up
+bash get_hostname.sh
+# upon success, you should see something like this
+(tgi-swarm-py3.10) costa@login-node-1:/fsx/costa/tgi-swarm$ bash get_hostname.sh
+Using tgi
+PWD: /fsx/costa/tgi-swarm
+Latest created log file is slurm/logs/tgi-swarm_513810.out
+Port not found in log file.
+Hostname: ip-26-0-164-236
+Saving address http://ip-26-0-164-236:59085 in /fsx/costa/tgi-swarm/hosts.txt
+{"generated_text":"\n\nLife is a characteristic that distinguishes physical"}
+The TGI endpoint works 🎉!
+```
+
+* vLLM:
+```bash
+# deploy vLLM
+sbatch vllm_h100.slurm
+# get hostname, this uses the latest created log path
+# you may need to run this multiple times until the vLLM instance is up
+bash get_hostname.sh vllm
+# upon success, you should see something like this
+(tgi-swarm-py3.10) costa@login-node-1:/fsx/costa/tgi-swarm$ 
+Using vllm
+PWD: /fsx/costa/tgi-swarm
+Latest created log file is slurm/logs_vllm/vllm_549609.out
+Job 549609 running on ip-26-0-161-221
+Hostname: ip-26-0-161-221
+Saving address http://ip-26-0-161-221:8000 in /fsx/costa/tgi-swarm/host_vllm.txt
+{"text":["What is Life?\n\nLife is a characteristic that distinguishes physical entities that have biological processes and"]}
+The vLLM endpoint works 🎉!
+```
+
+This will generate log files in `./slurm/logs` and also `./hosts.txt` (`./slurm/vllm_logs` and also `./hosts_vllm.txt` for vLLM) with the list of nodes used for the job.
+
+```bash
+# tgi
+python ./examples/hh/generate_hh_simple.py --max_samples 50 --manage_tgi_instances  --instances 1
+# vllm
+python ./examples/hh/generate_hh_simple.py --max_samples 50 --use_vllm --output_folder output/hh_simple_vllm --manage_tgi_instances  --instances 1
 ```
 ```
 Loaded 1 endpoints: http://26.0.149.1:45920

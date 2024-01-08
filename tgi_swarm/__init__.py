@@ -1,20 +1,19 @@
 import asyncio
 import multiprocessing.queues
 import os
-from collections import defaultdict
-from dataclasses import dataclass
-from math import ceil
-from multiprocessing import Process, Queue
 import shlex
 import signal
 import subprocess
 import sys
-from typing import Annotated, Callable, Union, List, Optional, Any
 import time
 import uuid
+from collections import defaultdict
+from dataclasses import dataclass
+from math import ceil
+from multiprocessing import Process, Queue
+from typing import Annotated, Any, Callable, List, Optional, Union
+
 import requests
-
-
 import tyro
 from huggingface_hub import AsyncInferenceClient, get_session
 from tqdm import tqdm
@@ -40,9 +39,9 @@ class TGIConfig:
     Configuration class for TGI
     """
 
-    batch_size: Annotated[int, tyro.conf.arg(aliases=["-bs"])] = 250
+    batch_size: Annotated[int, tyro.conf.arg(aliases=["-bs"])] = 500
     """Individual batch size"""
-    instances: Annotated[int, tyro.conf.arg(aliases=["-i"])] = 2
+    instances: Annotated[int, tyro.conf.arg(aliases=["-i"])] = 1
     """Number of model instances"""
     endpoint: Annotated[str, tyro.conf.arg(aliases=["-e"])] = "hosts.txt"
     """Model endpoint. Can be path to file with list of endpoints"""
@@ -52,10 +51,15 @@ class TGIConfig:
     """Save partial results ever checkpoint_size generations"""
     manage_tgi_instances: Annotated[bool, tyro.conf.arg(aliases=["-r"])] = False
     """Spin up and terminate TGI instances when the generation is done"""
-    slurm_template_path: Annotated[str, tyro.conf.arg(aliases=["-slurm"])] = "tgi_template.slurm"
+    slurm_template_path: Annotated[str, tyro.conf.arg(aliases=["-slurm"])] = "tgi_h100.slurm"
     """Slurm template file path"""
     tokenizer: Annotated[str, tyro.conf.arg(aliases=["-tokenizer"])] = "mistralai/Mistral-7B-Instruct-v0.1"
     """Tokenizer for getting the number of tokens in throughput measurment"""
+    get_hostname_template: Annotated[str, tyro.conf.arg(aliases=["-host"])] = "get_hostname_template.sh"
+    """Template for retreiving and saving hosts (needed for H100 cluster)"""
+    use_vllm: Annotated[bool, tyro.conf.arg(aliases=["-vllm"])] = False
+    """Use vLLM instead of TGI"""
+
 
 SENTINEL = None
 
@@ -70,9 +74,18 @@ def run_command(command: str):
     return output.decode("utf-8").strip()
 
 
+def is_job_running(job_id):
+    """Given job id, check if the job is in eunning state (needed to retrieve hostname from logs)"""
+    command = "squeue --me --states=R | awk '{print $1}' | tail -n +2"
+    my_running_jobs = subprocess.run(
+        command, shell=True, text=True, capture_output=True
+    ).stdout.splitlines()
+    return job_id in my_running_jobs
+
+
 async def requests_worker(
     send_request: Callable, input_queue: multiprocessing.Queue, output_queue: multiprocessing.Queue, client
-):
+    ):
     """Send a single request to the model.
         Get the input from the input queue and put the result in the output queue.
 
@@ -93,7 +106,9 @@ async def requests_worker(
 
 async def mp_worker_async(
     send_request: Callable, input_queue: multiprocessing.Queue, endpoint, args, output_queue: multiprocessing.Queue
-):
+    ):
+    if args.use_vllm:
+        endpoint = f"{endpoint}/generate"
     client = AsyncInferenceClient(model=endpoint)
     await asyncio.gather(*[requests_worker(send_request, input_queue, output_queue, client) for _ in range(args.batch_size)])
     output_queue.put(SENTINEL)  # signal that we are done
@@ -121,7 +136,9 @@ def load_endpoints(endpoint_val: Union[str, List[str]], num_instances: int = 1) 
                 endpoints = open(endpoint_val).read().splitlines()
             else:
                 endpoints = endpoint_val.split(",")
-            assert len(endpoints) == num_instances  # could read an empty file
+            assert (
+                len(endpoints) == num_instances
+            ), f"#endpoints {len(endpoints)} doesn't match #instances {num_instances}"  # could read an empty file
             # due to race condition (slurm writing & us reading)
             trying = False
         except Exception as e:
@@ -139,6 +156,18 @@ def load_endpoints(endpoint_val: Union[str, List[str]], num_instances: int = 1) 
                 print(f"Attempting to reconnect to {endpoint}...")
                 time.sleep(10)
     return endpoints
+
+
+def get_hostname_template(args, job_type, slurm_host_path, job_id):
+    """Build the bash script for retrieving hostname given job id and inference library TGI/vLLM"""
+    with open(args.get_hostname_template) as f:
+        hostname_template = f.read()
+    hostname_template = hostname_template.replace(r"{{job_type}}", job_type)
+    hostname_template = hostname_template.replace(
+        r"{{slurm_hosts_path}}", slurm_host_path
+    )
+    hostname_template = hostname_template.replace("{{job_id}}", job_id)
+    return hostname_template
 
 
 def generate_data(
@@ -170,28 +199,59 @@ def generate_data(
         max_input_size (int, optional): max size of input queue. Defaults to 0.
     """
     if args.manage_tgi_instances:
-        with open(args.slurm_template_path) as f:
+        if args.use_vllm and "tgi" in args.slurm_template_path:
+            print(
+                f"Using vllm_h100.slurm instead of default template {args.slurm_template_path}"
+            )
+            template = "vllm_h100.slurm"
+        else:
+            template = args.slurm_template_path
+        with open(template) as f:
             slurm_template = f.read()
         filename = str(uuid.uuid4())
-        slurm_path = os.path.join("slurm", f"{filename}.slurm")
-        slurm_host_path = os.path.join("slurm", f"{filename}_host.txt")
-        slurm_template = slurm_template.replace(r"{{slurm_hosts_path}}", slurm_host_path)
-        with open(os.path.join("slurm", f"{filename}.slurm"), "w") as f:
+        job_type = "vllm" if args.use_vllm else "tgi"
+        # slurm file for launching inference job
+        slurm_path = os.path.join("slurm", f"{filename}_{job_type}.slurm")
+        # bash script for retrieving endpoints from job logs
+        hosts_bash_path = os.path.join("slurm", f"{filename}_host_{job_type}.sh")
+        # txt file where we save the endpoints
+        slurm_host_path = os.path.join("slurm", f"{filename}_host_{job_type}.txt")
+        with open(slurm_path, "w") as f:
             f.write(slurm_template)
         job_ids = [run_command(f"sbatch --parsable {slurm_path}") for _ in range(args.instances)]
         print(f"Slurm Job ID: {job_ids}")
+        # retrieve hostnames
+        for job_id in job_ids:
+            print("-" * 60)
+            template = get_hostname_template(args, job_type, slurm_host_path, job_id)
+            with open(hosts_bash_path, "w") as f:
+                f.write(template)
+            # wait until the job is running to retrieve the hostname and save in slurm_host_path
+            while not is_job_running(job_id):
+                print(f"Waiting for job {job_id} to start...")
+                time.sleep(10)
+            print("Sleep for 60 more sec while the job runs and instance is up")
+            time.sleep(60)
+            output_host = run_command(f"bash {hosts_bash_path}")
+            print(f"- Output from hostname retrieval:START_OUTPUT\n{output_host}\nEND_OUTPUT")
 
         def cleanup_function(signum, frame):
             for job_id in job_ids:
                 run_command(f"scancel {job_id}")
-            print("TGI instances terminated")
+            library = "TGI" if not args.use_vllm else "vLLM"
+            print(f"{library} instances terminated")
             sys.exit(0)
 
         signal.signal(signal.SIGINT, cleanup_function)  # Handle Ctrl+C
         signal.signal(signal.SIGTERM, cleanup_function)  # Handle termination requests
         endpoints = load_endpoints(slurm_host_path, args.instances)
     else:
-        endpoints = load_endpoints(args.endpoint, args.instances)
+        # change default endpoints file for vllm
+        if args.use_vllm and args.endpoint == "hosts.txt":
+            print(f"Reading endpoints from hosts_vllm.txt")
+            endpoints = load_endpoints("hosts_vllm.txt", args.instances)
+        else:
+            endpoints = load_endpoints(args.endpoint, args.instances)
     print(f"Loaded {len(endpoints)} endpoints: {', '.join(endpoints)}")
     num_instances = args.instances
 
