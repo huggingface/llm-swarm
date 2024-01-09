@@ -30,19 +30,31 @@ class Args:
     max_samples: int = 1024
     """The maximum number of samples to generate (use -1 for all))"""
     tgi: tyro.conf.OmitArgPrefixes[TGIConfig] = field(default_factory=lambda: TGIConfig())
+    use_textbooks: bool = True
+    """Whether to use textbooks prompts (the prompts have varying sizes ~10 to 800 tokens)"""
 
 
 if __name__ == "__main__":
     args = tyro.cli(Args)
     os.makedirs(args.output_folder, exist_ok=True)
-    rw = load_dataset("Anthropic/hh-rlhf", split="train")
+    if args.use_textbooks:
+        rw = load_dataset("HuggingFaceTB/synthetic_textbooks_subset", split="train")
+    else:
+        rw = load_dataset("Anthropic/hh-rlhf", split="train")
     if args.max_samples == -1:
         args.max_samples = len(rw)
     pprint(args)
 
     def reader(input_queue, start_index):
         print("Loading dataset")
-        rw = load_dataset("Anthropic/hh-rlhf", split="train").select(range(args.max_samples))
+        if args.use_textbooks:
+            rw = load_dataset(
+                "HuggingFaceTB/synthetic_textbooks_subset", split="train"
+            ).select(range(args.max_samples))
+        else:
+            rw = load_dataset("Anthropic/hh-rlhf", split="train").select(
+                range(args.max_samples)
+            )
 
         def extract(example):
             # Extract the "Human:" prompts
@@ -52,7 +64,15 @@ if __name__ == "__main__":
                 if "Human:" in segment:
                     return {"prompt": segment.split(": ")[1]}
 
-        rw = rw.map(extract)
+        def extract_textbooks(example):
+            text = example["prompt"]
+            prompt = text[: -len("Falcon:")] if text.endswith("Falcon:") else text
+            return {"prompt": prompt}
+
+        if args.use_textbooks:
+            rw = rw.map(extract_textbooks)
+        else:
+            rw = rw.map(extract)
 
         for si, sample in enumerate(rw):
             if si < start_index:
@@ -114,4 +134,5 @@ if __name__ == "__main__":
         send_request,
         total_input=args.max_samples,
         max_input_size=20000,
+        log_throughput=True,
     )

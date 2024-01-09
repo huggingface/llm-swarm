@@ -17,7 +17,7 @@ import requests
 import tyro
 from huggingface_hub import AsyncInferenceClient, get_session
 from tqdm import tqdm
-
+from transformers import AutoTokenizer
 
 def human_format(num: float, billions: bool = False, divide_by_1024: bool = False) -> str:
     if abs(num) < 1:
@@ -53,6 +53,8 @@ class TGIConfig:
     """Spin up and terminate TGI instances when the generation is done"""
     slurm_template_path: Annotated[str, tyro.conf.arg(aliases=["-slurm"])] = "tgi_h100.slurm"
     """Slurm template file path"""
+    tokenizer: Annotated[str, tyro.conf.arg(aliases=["-tokenizer"])] = "mistralai/Mistral-7B-Instruct-v0.1"
+    """Tokenizer for getting the number of tokens in throughput measurment"""
     get_hostname_template: Annotated[str, tyro.conf.arg(aliases=["-host"])] = "get_hostname_template.sh"
     """Template for retreiving and saving hosts (needed for H100 cluster)"""
     use_vllm: Annotated[bool, tyro.conf.arg(aliases=["-vllm"])] = False
@@ -177,6 +179,7 @@ def generate_data(
     total_input: Optional[int] = None,
     total_tqdm: Optional[int] = None,
     max_input_size: int = 0,
+    log_throughput: bool = True,
 ):
     """Control the swarm of workers to generate data
 
@@ -277,9 +280,15 @@ def generate_data(
     workers_completed = 0
     results = defaultdict(list)
     current_time = time.time()
+    total_tokens_generated = 0
+    total_generation_time = 0
+    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
     with tqdm(total=total_input if total_input else total_tqdm, initial=args.start * checkpoint_chunk_size) as pbar:
         while True:
+            start_time = time.time()
             generated_textbook = output_queue.get()
+            generation_time = time.time() - start_time
+            total_generation_time += generation_time
             # check if we are done
             if generated_textbook == SENTINEL:
                 workers_completed += 1
@@ -287,6 +296,11 @@ def generate_data(
                     break
                 else:
                     continue
+            if log_throughput:
+                generated_tokens = len(
+                    tokenizer.encode(generated_textbook["continuation"])
+                )
+                total_tokens_generated += generated_tokens
             # store generated textbook in corresponding list
             pbar.update()
             chunk_i = int(generated_textbook["index"]) // checkpoint_chunk_size
@@ -315,6 +329,9 @@ def generate_data(
         closer()
 
     print("Processing complete.")
+    if log_throughput:
+        average_throughput = total_tokens_generated / total_generation_time
+        print(f"Average Throughput: {average_throughput:.2f} tokens/sec, total generation time {total_generation_time/60:.2f}min")
     # close workers
     for p in ps:
         p.join(timeout=3)
