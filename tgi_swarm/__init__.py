@@ -179,7 +179,7 @@ def generate_data(
     total_input: Optional[int] = None,
     total_tqdm: Optional[int] = None,
     max_input_size: int = 0,
-    log_throughput: bool = True,
+    log_throughput: bool = False,
 ):
     """Control the swarm of workers to generate data
 
@@ -240,7 +240,6 @@ def generate_data(
                 run_command(f"scancel {job_id}")
             library = "TGI" if not args.use_vllm else "vLLM"
             print(f"{library} instances terminated")
-            sys.exit(0)
 
         signal.signal(signal.SIGINT, cleanup_function)  # Handle Ctrl+C
         signal.signal(signal.SIGTERM, cleanup_function)  # Handle termination requests

@@ -4,6 +4,7 @@ import os
 from dataclasses import dataclass, field
 import random
 import shutil
+import time
 from typing import Annotated
 
 from huggingface_hub import HfApi
@@ -37,15 +38,19 @@ class Args:
     """The split to use"""
     push_to_hub: bool = False
     """Whether to push to hub"""
-    constitution_path: str = "examples/hh/constitution1.json"
+    constitution_path: str = "examples/hh/constitution.json"
     """Path to the constitution"""
     repo_id: str = "cai-conversation-dev"
     """The repo id to push to"""
+    timestamp: bool = True
+    """Whether to add a timestamp to the repo_id"""
     tgi: tyro.conf.OmitArgPrefixes[TGIConfig] = field(default_factory=lambda: TGIConfig())
 
 
 if __name__ == "__main__":
     args = tyro.cli(Args)
+    if args.timestamp:
+        args.repo_id += str(int(time.time()))
     if os.path.exists(args.output_folder):
         args.overwrite = input(f"Output folder {args.output_folder} already exists. Overwrite? [y/N] ").lower() == "y"
         if args.overwrite:
@@ -130,42 +135,38 @@ if __name__ == "__main__":
 
         return sample
 
-    closer = None
+    generate_data(args.tgi, reader, writer, send_request, total_input=args.max_samples, max_input_size=20000)
     if args.push_to_hub:
-        def closer():
-            """Called at the end of the generation"""
-            dataset_shards = []
-            for file in os.listdir(args.output_folder):
-                print(file)
-                dataset_shards.append(Dataset.load_from_disk(os.path.join(args.output_folder, file)))
-            ds = combine.concatenate_datasets(dataset_shards)
-            def process(example):
-                return {
-                    "prompt": example["init_prompt"]["content"],
-                    "messages": [
-                        example["init_prompt"],
-                        example["revision_response"],
-                    ],
-                    "chosen": [
-                        example["init_prompt"],
-                        example["revision_response"],
-                    ],
-                    "rejected": [
-                        example["init_prompt"],
-                        example["init_response"],
-                    ],
-                }
-            ds = ds.map(process)
-            ds.select(range(len(ds) // 2)).push_to_hub(args.repo_id, split=f"{args.split}_sft")
-            ds.select(range(len(ds) // 2, len(ds))).push_to_hub(args.repo_id, split=f"{args.split}_prefs")
-            if "/" not in args.repo_id: # find the current user
-                args.repo_id = f"{api.whoami()['name']}/{args.repo_id}"
-            api.upload_file(
-                path_or_fileobj=__file__,
-                path_in_repo="create_dataset.py",
-                repo_id=args.repo_id,
-                repo_type="dataset",
-            )
-            print("Done!")
-
-    generate_data(args.tgi, reader, writer, send_request, closer=closer, total_input=args.max_samples, max_input_size=20000)
+        dataset_shards = []
+        for file in os.listdir(args.output_folder):
+            print(file)
+            dataset_shards.append(Dataset.load_from_disk(os.path.join(args.output_folder, file)))
+        ds = combine.concatenate_datasets(dataset_shards)
+        def process(example):
+            return {
+                "prompt": example["init_prompt"]["content"],
+                "messages": [
+                    example["init_prompt"],
+                    example["revision_response"],
+                ],
+                "chosen": [
+                    example["init_prompt"],
+                    example["revision_response"],
+                ],
+                "rejected": [
+                    example["init_prompt"],
+                    example["init_response"],
+                ],
+            }
+        ds = ds.map(process)
+        ds.select(range(len(ds) // 2)).push_to_hub(args.repo_id, split=f"{args.split}_sft")
+        ds.select(range(len(ds) // 2, len(ds))).push_to_hub(args.repo_id, split=f"{args.split}_prefs")
+        if "/" not in args.repo_id: # find the current user
+            args.repo_id = f"{api.whoami()['name']}/{args.repo_id}"
+        api.upload_file(
+            path_or_fileobj=__file__,
+            path_in_repo="create_dataset.py",
+            repo_id=args.repo_id,
+            repo_type="dataset",
+        )
+        print("Done!")
