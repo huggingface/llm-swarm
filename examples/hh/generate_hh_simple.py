@@ -114,4 +114,5 @@ if __name__ == "__main__":
         send_request,
         total_input=args.max_samples,
         max_input_size=20000,
+        log_throughput=True,
     )
