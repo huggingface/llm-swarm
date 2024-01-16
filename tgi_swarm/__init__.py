@@ -1,75 +1,36 @@
-import asyncio
-import multiprocessing.queues
+from dataclasses import dataclass, field
 import os
-import shlex
-import signal
 import subprocess
-import sys
 import time
-import uuid
-from collections import defaultdict
-from dataclasses import dataclass
-from math import ceil
-from multiprocessing import Process, Queue
-from typing import Annotated, Any, Callable, List, Optional, Union
-
+from typing import Generic, Iterable, List, Literal, Tuple, Type, TypeVar, Union
+from huggingface_hub import get_session
 import requests
-import tyro
-from huggingface_hub import AsyncInferenceClient, get_session
-from tqdm import tqdm
-from transformers import AutoTokenizer
 
-def human_format(num: float, billions: bool = False, divide_by_1024: bool = False) -> str:
-    if abs(num) < 1:
-        return f"{num:.3g}"
-    SIZES = ["", "K", "M", "G", "T", "P", "E"]
-    num = float(f"{num:.3g}")
-    magnitude = 0
-    i = 0
-    while abs(num) >= 1000 and i < len(SIZES) - 1:
-        magnitude += 1
-        num /= 1000.0 if not divide_by_1024 else 1024.0
-        i += 1
-    return "{}{}".format(f"{num:f}".rstrip("0").rstrip("."), SIZES[magnitude])
+from itertools import cycle
+from shutil import get_terminal_size
+from threading import Thread
+from time import sleep
+import socket
+DataclassT = TypeVar("DataclassT")
 
 
 @dataclass
-class TGIConfig:
-    """
-    Configuration class for TGI
-    """
-
-    batch_size: Annotated[int, tyro.conf.arg(aliases=["-bs"])] = 500
-    """Individual batch size"""
-    instances: Annotated[int, tyro.conf.arg(aliases=["-i"])] = 1
-    """Number of model instances"""
-    endpoint: Annotated[str, tyro.conf.arg(aliases=["-e"])] = "hosts.txt"
-    """Model endpoint. Can be path to file with list of endpoints"""
-    start: Annotated[int, tyro.conf.arg(aliases=["-s"])] = 0
-    """Start index (in terms of chunks of size instances*batch_size)"""
-    checkpoint_size: Annotated[int, tyro.conf.arg(aliases=["-csize"])] = 5000
-    """Save partial results ever checkpoint_size generations"""
-    manage_tgi_instances: Annotated[bool, tyro.conf.arg(aliases=["-r"])] = False
-    """Spin up and terminate TGI instances when the generation is done"""
-    slurm_template_path: Annotated[str, tyro.conf.arg(aliases=["-slurm"])] = "tgi_h100.slurm"
-    """Slurm template file path"""
-    tokenizer: Annotated[str, tyro.conf.arg(aliases=["-tokenizer"])] = "mistralai/Mistral-7B-Instruct-v0.1"
-    """Tokenizer for getting the number of tokens in throughput measurment"""
-    get_hostname_template: Annotated[str, tyro.conf.arg(aliases=["-host"])] = "get_hostname_template.sh"
-    """Template for retreiving and saving hosts (needed for H100 cluster)"""
-    use_vllm: Annotated[bool, tyro.conf.arg(aliases=["-vllm"])] = False
-    """Use vLLM instead of TGI"""
-
-
-SENTINEL = None
+class InferenceSwarmConfig:
+    instances: int
+    """number of inference instances"""
+    inference_engine: Literal["tgi", "vllm"] = "tgi"
+    """inference engine to use"""
+    slurm_template_path: str = "templates/tgi_h100.template.slurm"
+    """path to slurm template"""
+    load_balancer_template_path: str = "templates/nginx.template.conf"
+    """path to load balancer template"""
 
 
 def run_command(command: str):
-    command_list = shlex.split(command)
     print(f"running {command}")
-    fd = subprocess.Popen(command_list, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    output, errors = fd.communicate()
-    return_code = fd.returncode
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+    output, errors = process.communicate()
+    return_code = process.returncode
     assert return_code == 0, f"Command failed with error: {errors.decode('utf-8')}"
     return output.decode("utf-8").strip()
 
@@ -82,269 +43,223 @@ def is_job_running(job_id):
     ).stdout.splitlines()
     return job_id in my_running_jobs
 
-
-async def requests_worker(
-    send_request: Callable, input_queue: multiprocessing.Queue, output_queue: multiprocessing.Queue, client
-    ):
-    """Send a single request to the model.
-        Get the input from the input queue and put the result in the output queue.
-
-    Args:
-        send_request (Callable): function to send request to model
-        input_queue (multiprocessing.Queue): input queue
-        output_queue (multiprocessing.Queue): output queue
-        client (AsyncInferenceClient): inference client
-    """
-    while True:
-        element = input_queue.get()
-        if element == SENTINEL:
-            input_queue.put(element)
-            break
-        res = await send_request(element, client)
-        output_queue.put(res)
+def get_unused_port():
+    sock = socket.socket()
+    sock.bind(('', 0))
+    return sock.getsockname()[1]
 
 
-async def mp_worker_async(
-    send_request: Callable, input_queue: multiprocessing.Queue, endpoint, args, output_queue: multiprocessing.Queue
-    ):
-    if args.use_vllm:
-        endpoint = f"{endpoint}/generate"
-    client = AsyncInferenceClient(model=endpoint)
-    await asyncio.gather(*[requests_worker(send_request, input_queue, output_queue, client) for _ in range(args.batch_size)])
-    output_queue.put(SENTINEL)  # signal that we are done
+def test_generation(endpoint):
+    headers = {
+        "Content-Type": "application/json",
+    }
+    data = {
+        'inputs': 'What is Deep Learning?',
+        'parameters': {
+            'max_new_tokens': 200,
+        },
+    }
+    response = requests.post(endpoint, headers=headers, json=data)
+    print("✅ test generation", response.json())
+
+class Loader:
+    def __init__(self, desc="Loading...", end="✅ Done!", failed="❌ Aborted!", timeout=0.1):
+        """
+        A loader-like context manager
+
+        Args:
+            desc (str, optional): The loader's description. Defaults to "Loading...".
+            end (str, optional): Final print. Defaults to "Done!".
+            failed (str, optional): Final print on failure. Defaults to "Aborted!".
+            timeout (float, optional): Sleep time between prints. Defaults to 0.1.
+        """
+        self.desc = desc
+        self.end =  end + " " + self.desc
+        self.failed =  failed + " " + self.desc
+        self.timeout = timeout
+
+        self._thread = Thread(target=self._animate, daemon=True)
+        self.steps = ["⢿", "⣻", "⣽", "⣾", "⣷", "⣯", "⣟", "⡿"]
+        self.done = False
+
+    def start(self):
+        self._thread.start()
+        return self
+
+    def _animate(self):
+        try:
+            for c in cycle(self.steps):
+                if self.done:
+                    break
+                print(f"\r{c} {self.desc}", flush=True, end="")
+                sleep(self.timeout)
+        except KeyboardInterrupt:
+            self.stop()
+            print("KeyboardInterrupt by user")
+
+    def __enter__(self):
+        self.start()
+
+    def stop(self):
+        self.done = True
+        cols = get_terminal_size((80, 20)).columns
+        print("\r" + " " * cols, end="", flush=True)
+        print(f"\r{self.end}", flush=True)
+
+    def __exit__(self, exc_type, exc_value, tb):
+        if exc_type is None:
+            self.stop()
+        else:
+            self.done = True
+            cols = get_terminal_size((80, 20)).columns
+            print("\r" + " " * cols, end="", flush=True)
+            print(f"\r{self.failed}", flush=True)
 
 
-def mp_worker(*largs):
-    asyncio.run(mp_worker_async(*largs))
-
-
-def load_endpoints(endpoint_val: Union[str, List[str]], num_instances: int = 1) -> List[str]:
+def get_endpoints(endpoint_path: str, instances: int = 1) -> List[str]:
     """Return list of endpoints from either a file or a comma separated string.
     It also checks if the endpoints are reachable.
 
     Args:
-        endpoint_val (Union[str, List[str]]): either a file path or a comma separated string
-        num_instances (int, optional): number of instances. Defaults to 1.
+        endpoint_path (str): path to file containing endpoints or comma separated string
+        instances (int, optional): number of instances. Defaults to 1.
 
     Returns:
         List[str]: list of endpoints (e.g. ["http://26.0.154.245:13120"])
     """
     trying = True
-    while trying:
-        try:
-            if endpoint_val.endswith(".txt"):
-                endpoints = open(endpoint_val).read().splitlines()
-            else:
-                endpoints = endpoint_val.split(",")
-            assert (
-                len(endpoints) == num_instances
-            ), f"#endpoints {len(endpoints)} doesn't match #instances {num_instances}"  # could read an empty file
-            # due to race condition (slurm writing & us reading)
-            trying = False
-        except Exception as e:
-            print(f"Attempting to load endpoints... error: {e}")
-            time.sleep(10)
+    with Loader(f"Waiting for {endpoint_path} to be created"):
+        while trying:
+            try:
+                endpoints = open(endpoint_path).read().splitlines()
+                assert (
+                    len(endpoints) == instances
+                ), f"#endpoints {len(endpoints)} doesn't match #instances {instances}"  # could read an empty file
+                # due to race condition (slurm writing & us reading)
+                trying = False
+            except (OSError, AssertionError) as e:
+                sleep(1)
     print("obtained endpoints", endpoints)
     for endpoint in endpoints:
-        connected = False
-        while not connected:
-            try:
-                get_session().get(f"{endpoint}/health")
-                print(f"Connected to {endpoint}")
-                connected = True
-            except requests.exceptions.ConnectionError:
-                print(f"Attempting to reconnect to {endpoint}...")
-                time.sleep(10)
+        with Loader(f"Waiting for {endpoint} to be reachable"):
+            connected = False
+            while not connected:
+                try:
+                    get_session().get(f"{endpoint}/health")
+                    print(f"\nConnected to {endpoint}")
+                    connected = True
+                except requests.exceptions.ConnectionError:
+                    sleep(1)
     return endpoints
 
-
-def get_hostname_template(args, job_type, slurm_host_path, job_id):
-    """Build the bash script for retrieving hostname given job id and inference library TGI/vLLM"""
-    with open(args.get_hostname_template) as f:
-        hostname_template = f.read()
-    hostname_template = hostname_template.replace(r"{{job_type}}", job_type)
-    hostname_template = hostname_template.replace(
-        r"{{slurm_hosts_path}}", slurm_host_path
-    )
-    hostname_template = hostname_template.replace("{{job_id}}", job_id)
-    return hostname_template
-
-
-def generate_data(
-    args: TGIConfig,
-    reader: Callable[[multiprocessing.Queue, int], None],
-    writer: Callable[[List[Any], int, int], None],
-    send_request: Callable[[Any, AsyncInferenceClient], Any],
-    closer: Optional[Callable] = None,
-    total_input: Optional[int] = None,
-    total_tqdm: Optional[int] = None,
-    max_input_size: int = 0,
-    log_throughput: bool = True,
-):
-    """Control the swarm of workers to generate data
-
-    Args:
-        args (TGIConfig): configuration
-        reader (Callable: (input_queue, start_index) -> None): Reader function – Read the data starting from start_index and put it sample by sample in the input_queue. Put a SENTINEL in the queue to finish.
-        send_request (Callable): function to send request to model
-        writer (Callable: chunk, chink_i, total_nr_chunks -> None): Write a chunk of samples to disk.
-            Samples are a list of objects returned by send_request.
-
-            Args:
-                chunk (Any): sample
-                chunk_i (int): chunk index
-                total_nr_chunks (int): total number of chunks
-
-        total_input (Optional[int], optional): total number of input samples. Defaults to None. Used for saving/tqdm
-        max_input_size (int, optional): max size of input queue. Defaults to 0.
-    """
-    if args.manage_tgi_instances:
-        if args.use_vllm and "tgi" in args.slurm_template_path:
+class InferenceSwarm:
+    def __init__(
+        self,
+        config: InferenceSwarmConfig
+    ) -> None:
+        self.config = config
+        self.cleaned_up = False
+        os.makedirs("slurm/logs", exist_ok=True)
+    
+    def start(self):
+        if self.config.inference_engine == "vllm":
             print(
-                f"Using vllm_h100.slurm instead of default template {args.slurm_template_path}"
+                f"Using vllm_h100.slurm instead of default template {self.config.slurm_template_path}"
             )
             template = "vllm_h100.slurm"
         else:
-            template = args.slurm_template_path
+            template = self.config.slurm_template_path
         with open(template) as f:
             slurm_template = f.read()
-        filename = str(uuid.uuid4())
-        job_type = "vllm" if args.use_vllm else "tgi"
-        # slurm file for launching inference job
-        slurm_path = os.path.join("slurm", f"{filename}_{job_type}.slurm")
-        # bash script for retrieving endpoints from job logs
-        hosts_bash_path = os.path.join("slurm", f"{filename}_host_{job_type}.sh")
-        # txt file where we save the endpoints
-        slurm_host_path = os.path.join("slurm", f"{filename}_host_{job_type}.txt")
+
+        # customize slurm template
+        self.filename = f"{self.config.inference_engine}_{int(time.time())}"
+        slurm_path = os.path.join("slurm", f"{self.filename}_{self.config.inference_engine}.slurm")
+        slurm_host_path = os.path.join("slurm", f"{self.filename}_host_{self.config.inference_engine}.txt")
+        slurm_template = slurm_template.replace(r"{{slurm_hosts_path}}", slurm_host_path)
         with open(slurm_path, "w") as f:
             f.write(slurm_template)
-        job_ids = [run_command(f"sbatch --parsable {slurm_path}") for _ in range(args.instances)]
-        print(f"Slurm Job ID: {job_ids}")
-        # retrieve hostnames
-        for job_id in job_ids:
-            print("-" * 60)
-            template = get_hostname_template(args, job_type, slurm_host_path, job_id)
-            with open(hosts_bash_path, "w") as f:
-                f.write(template)
-            # wait until the job is running to retrieve the hostname and save in slurm_host_path
-            while not is_job_running(job_id):
-                print(f"Waiting for job {job_id} to start...")
-                time.sleep(10)
-            print("Sleep for 60 more sec while the job runs and instance is up")
-            time.sleep(60)
-            output_host = run_command(f"bash {hosts_bash_path}")
-            print(f"- Output from hostname retrieval:START_OUTPUT\n{output_host}\nEND_OUTPUT")
 
-        def cleanup_function(signum, frame):
-            for job_id in job_ids:
-                run_command(f"scancel {job_id}")
-            library = "TGI" if not args.use_vllm else "vLLM"
-            print(f"{library} instances terminated")
-            sys.exit(0)
+        # start inference instances
+        self.job_ids = [run_command(f"sbatch --parsable {slurm_path}") for _ in range(self.config.instances)]
+        print(f"Slurm Job ID: {self.job_ids}")
+        print(f"📖 Slurm Hosts Path: {slurm_host_path}")
 
-        signal.signal(signal.SIGINT, cleanup_function)  # Handle Ctrl+C
-        signal.signal(signal.SIGTERM, cleanup_function)  # Handle termination requests
-        endpoints = load_endpoints(slurm_host_path, args.instances)
-    else:
-        # change default endpoints file for vllm
-        if args.use_vllm and args.endpoint == "hosts.txt":
-            print(f"Reading endpoints from hosts_vllm.txt")
-            endpoints = load_endpoints("hosts_vllm.txt", args.instances)
-        else:
-            endpoints = load_endpoints(args.endpoint, args.instances)
-    print(f"Loaded {len(endpoints)} endpoints: {', '.join(endpoints)}")
-    num_instances = args.instances
-
-    print("Preparing data")
-    # input data
-    checkpoint_chunk_size = args.checkpoint_size
-    total_nr_chunks = ceil(total_input / checkpoint_chunk_size) if total_input else None
-    input_queue = Queue(max_input_size)
-    reader_p = Process(
-        target=reader, args=(input_queue, args.start * checkpoint_chunk_size)
-    )  # have the reader populate the queue
-    reader_p.start()
-
-    print("Starting workers")
-    # submit all the data to the workers
-    output_queue = Queue()
-    ps = [
-        Process(target=mp_worker, args=(send_request, input_queue, endpoints[wi % len(endpoints)], args, output_queue))
-        for wi in range(num_instances)
-    ]
-    for p in ps:
-        p.start()
-
-    print("Generating...")
-    # get results and save chunks
-    workers_completed = 0
-    results = defaultdict(list)
-    current_time = time.time()
-    total_tokens_generated = 0
-    total_generation_time = 0
-    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
-    with tqdm(total=total_input if total_input else total_tqdm, initial=args.start * checkpoint_chunk_size) as pbar:
-        while True:
-            start_time = time.time()
-            generated_textbook = output_queue.get()
-            generation_time = time.time() - start_time
-            total_generation_time += generation_time
-            # check if we are done
-            if generated_textbook == SENTINEL:
-                workers_completed += 1
-                if workers_completed == num_instances:
-                    break
-                else:
-                    continue
-            if log_throughput:
-                generated_tokens = len(
-                    tokenizer.encode(generated_textbook["continuation"])
-                )
-                total_tokens_generated += generated_tokens
-            # store generated textbook in corresponding list
-            pbar.update()
-            chunk_i = int(generated_textbook["index"]) // checkpoint_chunk_size
-            results[chunk_i].append(generated_textbook)
-            # check if it is complete
-            if len(results[chunk_i]) == checkpoint_chunk_size:  # current chunk is complete
-                sorted_res = sorted(results.pop(chunk_i), key=lambda x: int(x["index"]))
-                writer_data = writer(sorted_res, chunk_i, total_nr_chunks)
-                if writer_data is not None and len(writer_data) == 2:
-                    should_continue, update_size = writer_data
-                else:
-                    should_continue = True
-                    update_size = None
-                if should_continue is False:
-                    break
-                if update_size:
-                    pbar.desc = f"{human_format(float(update_size)/(time.time() - current_time))}/s"
-                    current_time = time.time()
-    if results:
-        for chunk_i, res in results.items():
-            if res:
-                sorted_res = sorted(res, key=lambda x: int(x["index"]))
-                writer(sorted_res, chunk_i, total_nr_chunks)
-
-    if closer:
-        closer()
-
-    print("Processing complete.")
-    if log_throughput:
-        average_throughput = total_tokens_generated / total_generation_time
-        print(f"Average Throughput: {average_throughput:.2f} tokens/sec, total generation time {total_generation_time/60:.2f}min")
-    # close workers
-    for p in ps:
-        p.join(timeout=3)
-    for p in ps:
         try:
-            p.close()
-        except ValueError:
-            p.terminate()
-    reader_p.join(timeout=3)
-    try:
-        reader_p.close()
-    except ValueError:
-        reader_p.terminate()
+            # ensure job is running
+            for job_id in self.job_ids:
+                with Loader(f"Waiting for {job_id} to be created"):
+                    while not is_job_running(job_id):
+                        sleep(1)
+            # retrieve endpoints
+            self.endpoints = get_endpoints(slurm_host_path, self.config.instances)
+            print(f"Endpoints running properly: {self.endpoints}")
 
-    if args.manage_tgi_instances:
-        cleanup_function(None, None)
+            if len(self.endpoints) == 1:
+                print(f"🔥 endpoint ready {self.endpoints[0]}")
+                self.endpoint = self.endpoints[0]
+            else:
+                # run a load balancer
+                with open(self.config.load_balancer_template_path) as f:
+                    # templates/nginx.template.conf
+                    load_balancer_template = f.read()
+                servers = "\n".join([f"server {endpoint.replace('http://', '')};" for endpoint in self.endpoints])
+                unused_port = get_unused_port()
+                load_balancer_template = load_balancer_template.replace(r"{{servers}}", servers)
+                load_balancer_template = load_balancer_template.replace(r"{{port}}", str(unused_port))
+                load_balancer_path = os.path.join("slurm", f"{self.filename}_load_balancer.conf")
+                with open(load_balancer_path, "w") as f:
+                    f.write(load_balancer_template)
+                load_balance_endpoint = f"http://localhost:{unused_port}"
+                command = f"sudo docker run -p {unused_port}:{unused_port} --network host -v $(pwd)/{load_balancer_path}:/etc/nginx/nginx.conf nginx"
+                load_balance_endpoint_connected = False
+
+                # run docker streaming output while we validate the endpoints
+                print(f"running {command}")
+                process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
+                while True:
+                    output = process.stdout.readline()
+                    if output == '' and process.poll() is not None:
+                        break
+                    if not output:
+                        continue
+                    if not load_balance_endpoint_connected:
+                        print(output.strip())
+                        try:
+                            get_session().get(f"{load_balance_endpoint}/health")
+                            print(f"🔥 endpoint ready {load_balance_endpoint}")
+                            load_balance_endpoint_connected = True
+                            self.endpoint = load_balance_endpoint
+                            break
+                        except requests.exceptions.ConnectionError:
+                            sleep(1)
+                print("haha")
+
+        except (KeyboardInterrupt, Exception) as e:
+            self.cleanup()
+
+
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.cleanup()
+
+    def cleanup(self, signum=None, frame=None):
+        if self.cleaned_up:
+            return
+        for job_id in self.job_ids:
+            run_command(f"scancel {job_id}")
+        print(f"inference instances terminated")
+        self.cleaned_up = True
+        
+
+if __name__ == "__main__":
+    with InferenceSwarm(InferenceSwarmConfig(
+        2, "tgi", "templates/tgi_h100.template.slurm", "templates/nginx.template.conf"
+    )) as inference_swarm:
+        test_generation(inference_swarm.endpoint)
+        while True:
+            input("Press Enter to EXIT...")
+            break
