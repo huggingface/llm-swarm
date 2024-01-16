@@ -256,9 +256,14 @@ class InferenceSwarm:
         
 
 if __name__ == "__main__":
-    with InferenceSwarm(InferenceSwarmConfig(
-        2, "tgi", "templates/tgi_h100.template.slurm", "templates/nginx.template.conf"
-    )) as inference_swarm:
+    with InferenceSwarm(
+        InferenceSwarmConfig(
+            instances=2,
+            inference_engine="tgi",
+            slurm_template_path="templates/tgi_h100.template.slurm",
+            load_balancer_template_path="templates/nginx.template.conf",
+        )
+    ) as inference_swarm:
         test_generation(inference_swarm.endpoint)
         while True:
             input("Press Enter to EXIT...")
