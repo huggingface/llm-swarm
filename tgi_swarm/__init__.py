@@ -194,6 +194,9 @@ class InferenceSwarm:
             # retrieve endpoints
             self.endpoints = get_endpoints(slurm_host_path, self.config.instances)
             print(f"Endpoints running properly: {self.endpoints}")
+            # warm up endpoints
+            for endpoint in self.endpoints:
+                test_generation(endpoint)
 
             if len(self.endpoints) == 1:
                 print(f"🔥 endpoint ready {self.endpoints[0]}")
@@ -258,13 +261,12 @@ class InferenceSwarm:
 if __name__ == "__main__":
     with InferenceSwarm(
         InferenceSwarmConfig(
-            instances=2,
+            instances=3,
             inference_engine="tgi",
             slurm_template_path="templates/tgi_h100.template.slurm",
             load_balancer_template_path="templates/nginx.template.conf",
         )
     ) as inference_swarm:
-        test_generation(inference_swarm.endpoint)
         while True:
             input("Press Enter to EXIT...")
             break
