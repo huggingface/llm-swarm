@@ -11,7 +11,7 @@ parser = HfArgumentParser(InferenceSwarmConfig)
 isc = parser.parse_args_into_dataclasses()[0]
 ds = load_dataset("Anthropic/hh-rlhf", split="train")
 ds = ds.select(range(10480))["chosen"]
-rate_limit = 400 * isc.instances
+rate_limit = 500 * isc.instances
 semaphore = asyncio.Semaphore(rate_limit)
 with InferenceSwarm(isc) as inference_swarm:
     client = AsyncInferenceClient(model=inference_swarm.endpoint)

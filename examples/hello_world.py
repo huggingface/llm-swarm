@@ -3,7 +3,14 @@ import pandas as pd
 from tgi_swarm import InferenceSwarm, InferenceSwarmConfig
 from huggingface_hub import AsyncInferenceClient
 from transformers import AutoTokenizer
+from tqdm.asyncio import tqdm_asyncio
 
+
+tasks = [
+    "What is the capital of France?",
+    "Who wrote Romeo and Juliet?",
+    "What is the formula for water?"
+]
 with InferenceSwarm(
     InferenceSwarmConfig(
         instances=2,
@@ -13,11 +20,6 @@ with InferenceSwarm(
     )
 ) as inference_swarm:
     client = AsyncInferenceClient(model=inference_swarm.endpoint)
-    tasks = [
-        "What is the capital of France?",
-        "Who wrote Romeo and Juliet?",
-        "What is the formula for water?"
-    ]
     tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-Instruct-v0.1")
     tokenizer.add_special_tokens({"sep_token": "", "cls_token": "", "mask_token": "", "pad_token": "[PAD]"})
 
@@ -31,7 +33,7 @@ with InferenceSwarm(
         )
 
     async def main():
-        results = await asyncio.gather(*(process_text(task) for task in tasks))
+        results = await tqdm_asyncio.gather(*(process_text(task) for task in tasks))
         df = pd.DataFrame({'Task': tasks, 'Completion': results})
         print(df)
     asyncio.run(main())
