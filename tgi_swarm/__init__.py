@@ -16,7 +16,7 @@ DataclassT = TypeVar("DataclassT")
 
 @dataclass
 class InferenceSwarmConfig:
-    instances: int
+    instances: int = 1
     """number of inference instances"""
     inference_engine: Literal["tgi", "vllm"] = "tgi"
     """inference engine to use"""
