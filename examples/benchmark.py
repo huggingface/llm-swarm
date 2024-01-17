@@ -9,21 +9,29 @@ import time
 
 parser = HfArgumentParser(InferenceSwarmConfig)
 isc = parser.parse_args_into_dataclasses()[0]
+tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-Instruct-v0.1")
+tokenizer.add_special_tokens({"sep_token": "", "cls_token": "", "mask_token": "", "pad_token": "[PAD]"})
 ds = load_dataset("Anthropic/hh-rlhf", split="train")
-ds = ds.select(range(10480))["chosen"]
+ds = ds.select(range(10480))
+def extract(example):
+    # Extract the "Human:" prompts
+    example = example["chosen"]
+    split_text = example.split("\n\n")
+    for segment in split_text:
+        if "Human:" in segment:
+            return {"prompt": segment.split(": ")[1]}
+ds = ds.map(extract)["prompt"]
 rate_limit = 500 * isc.instances
 semaphore = asyncio.Semaphore(rate_limit)
 with InferenceSwarm(isc) as inference_swarm:
     client = AsyncInferenceClient(model=inference_swarm.endpoint)
-    tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-Instruct-v0.1")
-    tokenizer.add_special_tokens({"sep_token": "", "cls_token": "", "mask_token": "", "pad_token": "[PAD]"})
     async def process_text(task):
         async with semaphore:
+            prompt = rf"<s>[INST] {task} [\INST]"
             completion = await client.text_generation(
-                prompt=tokenizer.apply_chat_template([
-                    {"role": "user", "content": task},
-                ], tokenize=False),
-                max_new_tokens=200,
+                prompt=prompt,
+                max_new_tokens=1500,
+                stop_sequences=["User:", "###", "<|endoftext|>"],
             )
             tokenized_completion = tokenizer.encode(completion)
             token_length = len(tokenized_completion)
