@@ -1,4 +1,4 @@
-# TGI-swarm
+# inference-swarm
 
 This repo is intended for generating massive texts leverage [huggingface/text-generation-inference](https://github.com/huggingface/text-generation-inference)
 
@@ -25,7 +25,7 @@ python examples/hello_world.py
 python examples/hello_world_vllm.py
 ```
 ```
-(.venv) costa@login-node-1:/fsx/costa/tgi-swarm$ python examples/hello_world.py 
+(.venv) costa@login-node-1:/fsx/costa/inference-swarm$ python examples/hello_world.py 
 None of PyTorch, TensorFlow >= 2.0, or Flax have been found. Models won't be available and only tokenizers, configuration and file/data utilities can be used.
 running sbatch --parsable slurm/tgi_1705445073_tgi.slurm
 Slurm Job ID: ['1072455']
@@ -67,7 +67,7 @@ python -m tgi_swarm --instances=1 --slurm_template_path templates/vllm_h100.temp
 Running commands above will give you outputs like below. 
 
 ```
-(.venv) costa@login-node-1:/fsx/costa/tgi-swarm$ python -m tgi_swarm --slurm_template_path templates
+(.venv) costa@login-node-1:/fsx/costa/inference-swarm$ python -m tgi_swarm --slurm_template_path templates
 /vllm_h100.template.slurm --inference_engine=vllm
 None of PyTorch, TensorFlow >= 2.0, or Flax have been found. Models won't be available and only tokenizers, configuration and file/data utilities can be used.
 running sbatch --parsable slurm/vllm_1705590449_vllm.slurm
@@ -112,13 +112,13 @@ sbatch tgi_h100.slurm
 # you may need to run this multiple times until the TGI instance is up
 bash get_hostname.sh
 # upon success, you should see something like this
-(tgi-swarm-py3.10) costa@login-node-1:/fsx/costa/tgi-swarm$ bash get_hostname.sh
+(inference-swarm-py3.10) costa@login-node-1:/fsx/costa/inference-swarm$ bash get_hostname.sh
 Using tgi
-PWD: /fsx/costa/tgi-swarm
-Latest created log file is slurm/logs/tgi-swarm_513810.out
+PWD: /fsx/costa/inference-swarm
+Latest created log file is slurm/logs/inference-swarm_513810.out
 Port not found in log file.
 Hostname: ip-26-0-164-236
-Saving address http://ip-26-0-164-236:59085 in /fsx/costa/tgi-swarm/hosts.txt
+Saving address http://ip-26-0-164-236:59085 in /fsx/costa/inference-swarm/hosts.txt
 {"generated_text":"\n\nLife is a characteristic that distinguishes physical"}
 The TGI endpoint works 🎉!
 ```
@@ -131,13 +131,13 @@ sbatch vllm_h100.slurm
 # you may need to run this multiple times until the vLLM instance is up
 bash get_hostname.sh vllm
 # upon success, you should see something like this
-(tgi-swarm-py3.10) costa@login-node-1:/fsx/costa/tgi-swarm$ 
+(inference-swarm-py3.10) costa@login-node-1:/fsx/costa/inference-swarm$ 
 Using vllm
-PWD: /fsx/costa/tgi-swarm
+PWD: /fsx/costa/inference-swarm
 Latest created log file is slurm/logs_vllm/vllm_549609.out
 Job 549609 running on ip-26-0-161-221
 Hostname: ip-26-0-161-221
-Saving address http://ip-26-0-161-221:8000 in /fsx/costa/tgi-swarm/host_vllm.txt
+Saving address http://ip-26-0-161-221:8000 in /fsx/costa/inference-swarm/host_vllm.txt
 {"text":["What is Life?\n\nLife is a characteristic that distinguishes physical entities that have biological processes and"]}
 The vLLM endpoint works 🎉!
 ```

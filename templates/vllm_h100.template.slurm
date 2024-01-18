@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=tgi-swarm
+#SBATCH --job-name=inference-swarm
 #SBATCH --partition hopper-prod
 #SBATCH --gpus=8
 #SBATCH --cpus-per-task=12
