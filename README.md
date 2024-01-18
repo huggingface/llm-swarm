@@ -59,15 +59,15 @@ It is possible to run the `inference_swarm` to spin up instances until the user 
 
 ```bash
 # run tgi
-python -m tgi_swarm --instances=1
+python -m inference_swarm --instances=1
 # run vllm
-python -m tgi_swarm --instances=1 --slurm_template_path templates/vllm_h100.template.slurm --inference_engine=vllm
+python -m inference_swarm --instances=1 --slurm_template_path templates/vllm_h100.template.slurm --inference_engine=vllm
 ```
 
 Running commands above will give you outputs like below. 
 
 ```
-(.venv) costa@login-node-1:/fsx/costa/inference-swarm$ python -m tgi_swarm --slurm_template_path templates
+(.venv) costa@login-node-1:/fsx/costa/inference-swarm$ python -m inference_swarm --slurm_template_path templates
 /vllm_h100.template.slurm --inference_engine=vllm
 None of PyTorch, TensorFlow >= 2.0, or Flax have been found. Models won't be available and only tokenizers, configuration and file/data utilities can be used.
 running sbatch --parsable slurm/vllm_1705590449_vllm.slurm
