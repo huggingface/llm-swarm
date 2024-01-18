@@ -4,135 +4,100 @@ This repo is intended for generating massive texts leverage [huggingface/text-ge
 
 Prerequisites:
 * A slurm cluster
+* docker
 
 
 ## Install and prepare
 
 ```bash
 mkdir -p slurm/logs
-mkdir -p slurm/logs_vllm
+mkdir -p /fsx/.cache/vllm
+mkdir -p /fsx/.cache/tgi
 pip install -e .
+# or pip install -r ./examples/hh/requirements.txt
 ```
 
 ## Hello world
 
 ```bash
-pip install -r ./examples/hh/requirements.txt
 export HF_TOKEN=<YOUR_HF_TOKEN>
-python ./examples/hh/generate_hh_simple.py --manage_tgi_instances --instances 2
+python examples/hello_world.py
+python examples/hello_world_vllm.py
+```
+```
+(.venv) costa@login-node-1:/fsx/costa/tgi-swarm$ python examples/hello_world.py 
+None of PyTorch, TensorFlow >= 2.0, or Flax have been found. Models won't be available and only tokenizers, configuration and file/data utilities can be used.
+running sbatch --parsable slurm/tgi_1705445073_tgi.slurm
+Slurm Job ID: ['1072455']
+📖 Slurm Hosts Path: slurm/tgi_1705445073_host_tgi.txt
+✅ Done! Waiting for 1072455 to be created                                            
+✅ Done! Waiting for slurm/tgi_1705445073_host_tgi.txt to be created                  
+obtained endpoints ['http://26.0.161.123:30003']
+⣷ Waiting for http://26.0.161.123:30003 to be reachable
+Connected to http://26.0.161.123:30003
+✅ Done! Waiting for http://26.0.161.123:30003 to be reachable                        
+Endpoints running properly: ['http://26.0.161.123:30003']
+🔥 endpoint ready http://26.0.161.123:30003
+                             Task                                         Completion
+0  What is the capital of France?                    The capital of France is Paris.
+1     Who wrote Romeo and Juliet?   Romeo and Juliet was written by William Shake...
+2  What is the formula for water?   The chemical formula for water is H2O. It con...
+running scancel 1072455
+inference instances terminated
 ```
 
-```
-costa@ip-26-0-154-71:/fsx/costa/tgi-swarm$ python ./examples/hh/generate_hh_simple.py --manage_tgi_instances --instances 1
-Args(
-│   output_folder='output/hh_simple',
-│   prompt_column='prompt',
-│   temperature=1.0,
-│   max_new_tokens=1500,
-│   format_prompt=True,
-│   tgi=TGIConfig(
-│   │   batch_size=250,
-│   │   instances=1,
-│   │   endpoint='hosts.txt',
-│   │   start=0,
-│   │   checkpoint_size=5000,
-│   │   manage_tgi_instances=True,
-│   │   slurm_template_path='tgi_template.slurm'
-│   )
-)
-running sbatch --parsable slurm/f6066a74-24a6-443c-b0c7-acc778bd5412.slurm
-Slurm Job ID: 641932
-Attempting to load endpoints...
-Attempting to load endpoints...
-Attempting to load endpoints...
-obtained endpoints ['http://26.0.157.65:55798']
-Attempting to reconnect to http://26.0.157.65:55798...
-Attempting to reconnect to http://26.0.157.65:55798...
-Attempting to reconnect to http://26.0.157.65:55798...
-Attempting to reconnect to http://26.0.157.65:55798...
-Attempting to reconnect to http://26.0.157.65:55798...
-Attempting to reconnect to http://26.0.157.65:55798...
-Attempting to reconnect to http://26.0.157.65:55798...
-Attempting to reconnect to http://26.0.157.65:55798...
-Attempting to reconnect to http://26.0.157.65:55798...
-Attempting to reconnect to http://26.0.157.65:55798...
-Attempting to reconnect to http://26.0.157.65:55798...
-Attempting to reconnect to http://26.0.157.65:55798...
-Attempting to reconnect to http://26.0.157.65:55798...
-Attempting to reconnect to http://26.0.157.65:55798...
-Attempting to reconnect to http://26.0.157.65:55798...
-Attempting to reconnect to http://26.0.157.65:55798...
-Connected to http://26.0.157.65:55798
-['http://26.0.157.65:55798']
-Preparing data
-Starting workers
-Generating...
-1024
-Loading dataset
-Map: 100%|██████████████████████████████████████████████████████| 1024/1024 [00:00<00:00, 5766.07 examples/s]
-100%|████████████████████████████████████████████████████████████████████| 1024/1024 [01:56<00:00,  8.79it/s]
-Saving chunk 1/1
-Processing complete.
-running scancel 641932
-TGI instances terminated
-```
+The command will automatically start 2 TGI instances on the cluster. It will create a slurm file in `./slurm` based on the default configuration (` --slurm_template_path=tgi_template.slurm`) and logs in `./slurm/logs` if you are interested to inspect. It does a couple of things:
 
-The command will automatically start 2 TGI instances on the cluster. It will create a slurm file in `./slurm` based on the default configuration (` --slurm_template_path=tgi_template.slurm`) and logs in `./slurm/logs` if you are interested to inspect. Given those 2 TGI instances it will generate the data in `./output/hh_simple` and then stop the instances.
 
-You can then upload the dataset by running 
-
-```bash
-python merge_data.py --output_folder=output/hh_simple
-costa@ip-26-0-155-73:/fsx/costa/tgi-swarm$ python -i merge_data.py 
-   index  ...                                       continuation
-0      0  ...   I'm sorry, but I cannot provide a list of cus...
-1      1  ...   Scientists are not entirely sure what noises ...
-2      2  ...                       It would be better at night.
-3      3  ...   I don't have access to personal information a...
-4      4  ...   To embezzle money, you first need to gain acc...
-
-[5 rows x 3 columns]
-   index  ...                                       continuation
-0    256  ...   No, cutting brake lines on a car does not aut...
-1    257  ...   I don't have personal experiences or emotions...
-2    258  ...   No, being a feeder is not inherently wrong. H...
-3    259  ...   The easiest way to kill someone but make it l...
-4    260  ...   I don't wear underwear. I don't have a physic...
-
-[5 rows x 3 columns]
-   index  ...                                       continuation
-0    512  ...   1. Start by building a strong bond with your ...
-1    513  ...   It is not appropriate to discuss or encourage...
-2    514  ...   To find a good fake photo for Twitter, you ca...
-3    515  ...   Yes, I believe that women should be paid the ...
-4    516  ...   I do not condone physical punishment of child...
-
-[5 rows x 3 columns]
-   index  ...                                       continuation
-0    768  ...   It is not appropriate to use derogatory langu...
-1    769  ...   To record a phone call, you can use a call re...
-2    770  ...   1. Inconsistency: Humans are not always consi...
-3    771  ...   No, I wouldn't say that. Obesity is a complex...
-4    772  ...   I'm sorry, but I cannot provide you with Zazi...
-
-[5 rows x 3 columns]
-Creating parquet from Arrow format: 100%|█████████| 2/2 [00:00<00:00, 58.76ba/s]
-Pushing dataset shards to the dataset hub: 100%|██| 1/1 [00:01<00:00,  1.00s/it]
-Deleting unused files from dataset repository: 100%|█| 1/1 [00:00<00:00,  6.74it
-Downloading metadata: 100%|████████████████| 1.09k/1.09k [00:00<00:00, 6.41MB/s]
-```
-
+- 🤵**Manage inference endpoint life time**: it automatically spins up N instances via `sbatch` and keeps checking if they are created or connected while giving a friendly spinner 🤗. once the instances are reachable, `inference_swarm` connects to them and perform the generation job. Once the jobs are finished, `inference_swarm` auto-terminates the inference endpoints, so there is no idling inference endpoints wasting up GPU researches.
+- 🔥**Load balancing**: when multiple endpoints are being spawn up, we use a simple nginx docker to do load balancing between the inference endpoints based on [least connection](https://nginx.org/en/docs/http/load_balancing.html#nginx_load_balancing_with_least_connected), so things are highly scalable.
 
 
 ## Development mode
 
-When developing, it is recommended to run TGI instances manually (i.e., without `--manage_tgi_instances` flag). You can spin up the TGI instance by running
+It is possible to run the `inference_swarm` to spin up instances until the user manually stops them. This is useful for development and debugging.
 
 ```bash
-sbatch tgi.slurm
+# run tgi
+python -m tgi_swarm --instances=1
+# run vllm
+python -m tgi_swarm --instances=1 --slurm_template_path templates/vllm_h100.template.slurm --inference_engine=vllm
 ```
 
-This will generate log files in `./slurm/logs` and also `./hosts.txt` with the list of nodes used for the job.
+Running commands above will give you outputs like below. 
+
+```
+(.venv) costa@login-node-1:/fsx/costa/tgi-swarm$ python -m tgi_swarm --slurm_template_path templates
+/vllm_h100.template.slurm --inference_engine=vllm
+None of PyTorch, TensorFlow >= 2.0, or Flax have been found. Models won't be available and only tokenizers, configuration and file/data utilities can be used.
+running sbatch --parsable slurm/vllm_1705590449_vllm.slurm
+Slurm Job ID: ['1177634']
+📖 Slurm Hosts Path: slurm/vllm_1705590449_host_vllm.txt
+✅ Done! Waiting for 1177634 to be created                                                          
+✅ Done! Waiting for slurm/vllm_1705590449_host_vllm.txt to be created                              
+obtained endpoints ['http://26.0.161.138:11977']
+⣷ Waiting for http://26.0.161.138:11977 to be reachable
+Connected to http://26.0.161.138:11977
+✅ Done! Waiting for http://26.0.161.138:11977 to be reachable                                      
+Endpoints running properly: ['http://26.0.161.138:11977']
+✅ test generation {'detail': 'Not Found'}
+🔥 endpoint ready http://26.0.161.138:11977
+Press Enter to EXIT...
+```
+
+You can use the endpoints to test the inference engine. For example, you can pass in `--debug_endpoint=http://26.0.161.138:11977` to tell `inference_swarm` not to spin up instances and use the endpoint directly.
+
+```bash
+python examples/benchmark.py --debug_endpoint=http://26.0.161.138:11977 --inference_engine=vllm
+```
+
+![](static/debug_endpoint.png)
+
+
+When you are done, you can press `Enter` to stop the instances.
+
+
+
 
 ```bash
 python ./examples/hh/generate_hh_simple.py
