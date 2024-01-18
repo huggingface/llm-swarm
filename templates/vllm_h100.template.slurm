@@ -6,7 +6,7 @@
 #SBATCH --mem-per-cpu=11G
 #SBATCH -o slurm/logs/%x_%j.out
 
-export volume=/fsx/.cache/vllm
+export volume=.cache/vllm
 export model=mistralai/Mistral-7B-Instruct-v0.1
 
 function unused_port() {

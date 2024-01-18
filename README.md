@@ -10,11 +10,13 @@ Prerequisites:
 ## Install and prepare
 
 ```bash
-mkdir -p slurm/logs
-mkdir -p /fsx/.cache/vllm
-mkdir -p /fsx/.cache/tgi
 pip install -e .
 # or pip install -r ./examples/hh/requirements.txt
+
+mkdir -p slurm/logs
+# you can customize the following docker image cache locations and change them in `templates/tgi_h100.template.slurm` and `templates/vllm_h100.template.slurm`
+mkdir -p .cache/vllm
+mkdir -p .cache/tgi
 ```
 
 ## Hello world
@@ -24,33 +26,90 @@ export HF_TOKEN=<YOUR_HF_TOKEN>
 python examples/hello_world.py
 python examples/hello_world_vllm.py
 ```
+
+```python
+import asyncio
+import pandas as pd
+from inference_swarm import InferenceSwarm, InferenceSwarmConfig
+from huggingface_hub import AsyncInferenceClient
+from transformers import AutoTokenizer
+from tqdm.asyncio import tqdm_asyncio
+
+
+tasks = [
+    "What is the capital of France?",
+    "Who wrote Romeo and Juliet?",
+    "What is the formula for water?"
+]
+with InferenceSwarm(
+    InferenceSwarmConfig(
+        instances=2,
+        inference_engine="tgi",
+        slurm_template_path="templates/tgi_h100.template.slurm",
+        load_balancer_template_path="templates/nginx.template.conf",
+    )
+) as inference_swarm:
+    client = AsyncInferenceClient(model=inference_swarm.endpoint)
+    tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-Instruct-v0.1")
+    tokenizer.add_special_tokens({"sep_token": "", "cls_token": "", "mask_token": "", "pad_token": "[PAD]"})
+
+    async def process_text(task):
+        prompt = tokenizer.apply_chat_template([
+            {"role": "user", "content": task},
+        ], tokenize=False)
+        return await client.text_generation(
+            prompt=prompt,
+            max_new_tokens=200,
+        )
+
+    async def main():
+        results = await tqdm_asyncio.gather(*(process_text(task) for task in tasks))
+        df = pd.DataFrame({'Task': tasks, 'Completion': results})
+        print(df)
+    asyncio.run(main())
 ```
-(.venv) costa@login-node-1:/fsx/costa/inference-swarm$ python examples/hello_world.py 
+```
+(.venv) costa@login-node-1:/fsx/costa/tgi-swarm$ python examples/hello_world.py
 None of PyTorch, TensorFlow >= 2.0, or Flax have been found. Models won't be available and only tokenizers, configuration and file/data utilities can be used.
-running sbatch --parsable slurm/tgi_1705445073_tgi.slurm
-Slurm Job ID: ['1072455']
-📖 Slurm Hosts Path: slurm/tgi_1705445073_host_tgi.txt
-✅ Done! Waiting for 1072455 to be created                                            
-✅ Done! Waiting for slurm/tgi_1705445073_host_tgi.txt to be created                  
-obtained endpoints ['http://26.0.161.123:30003']
-⣷ Waiting for http://26.0.161.123:30003 to be reachable
-Connected to http://26.0.161.123:30003
-✅ Done! Waiting for http://26.0.161.123:30003 to be reachable                        
-Endpoints running properly: ['http://26.0.161.123:30003']
-🔥 endpoint ready http://26.0.161.123:30003
+running sbatch --parsable slurm/tgi_1705591874_tgi.slurm
+running sbatch --parsable slurm/tgi_1705591874_tgi.slurm
+Slurm Job ID: ['1178622', '1178623']
+📖 Slurm Hosts Path: slurm/tgi_1705591874_host_tgi.txt
+✅ Done! Waiting for 1178622 to be created                                                                 
+✅ Done! Waiting for 1178623 to be created                                                                 
+✅ Done! Waiting for slurm/tgi_1705591874_host_tgi.txt to be created                                       
+obtained endpoints ['http://26.0.161.138:46777', 'http://26.0.167.175:44806']
+⣽ Waiting for http://26.0.161.138:46777 to be reachable
+Connected to http://26.0.161.138:46777
+✅ Done! Waiting for http://26.0.161.138:46777 to be reachable                                             
+⣯ Waiting for http://26.0.167.175:44806 to be reachable
+Connected to http://26.0.167.175:44806
+✅ Done! Waiting for http://26.0.167.175:44806 to be reachable                                             
+Endpoints running properly: ['http://26.0.161.138:46777', 'http://26.0.167.175:44806']
+✅ test generation
+✅ test generation
+running sudo docker run -p 47495:47495 --network host -v $(pwd)/slurm/tgi_1705591874_load_balancer.conf:/etc/nginx/nginx.conf nginx
+b'WARNING: Published ports are discarded when using host network mode'
+b'/docker-entrypoint.sh: /docker-entrypoint.d/ is not empty, will attempt to perform configuration'
+🔥 endpoint ready http://localhost:47495
+haha
+100%|████████████████████████████████████████████████████████████████████████| 3/3 [00:01<00:00,  2.44it/s]
                              Task                                         Completion
 0  What is the capital of France?                    The capital of France is Paris.
 1     Who wrote Romeo and Juliet?   Romeo and Juliet was written by William Shake...
 2  What is the formula for water?   The chemical formula for water is H2O. It con...
-running scancel 1072455
+running scancel 1178622
+running scancel 1178623
 inference instances terminated
 ```
 
-The command will automatically start 2 TGI instances on the cluster. It will create a slurm file in `./slurm` based on the default configuration (` --slurm_template_path=tgi_template.slurm`) and logs in `./slurm/logs` if you are interested to inspect. It does a couple of things:
+It does a couple of things:
 
 
-- 🤵**Manage inference endpoint life time**: it automatically spins up N instances via `sbatch` and keeps checking if they are created or connected while giving a friendly spinner 🤗. once the instances are reachable, `inference_swarm` connects to them and perform the generation job. Once the jobs are finished, `inference_swarm` auto-terminates the inference endpoints, so there is no idling inference endpoints wasting up GPU researches.
+- 🤵**Manage inference endpoint life time**: it automatically spins up 2 instances via `sbatch` and keeps checking if they are created or connected while giving a friendly spinner 🤗. once the instances are reachable, `inference_swarm` connects to them and perform the generation job. Once the jobs are finished, `inference_swarm` auto-terminates the inference endpoints, so there is no idling inference endpoints wasting up GPU researches.
 - 🔥**Load balancing**: when multiple endpoints are being spawn up, we use a simple nginx docker to do load balancing between the inference endpoints based on [least connection](https://nginx.org/en/docs/http/load_balancing.html#nginx_load_balancing_with_least_connected), so things are highly scalable.
+
+`inference_swarm` will create a slurm file in `./slurm` based on the default configuration (` --slurm_template_path=tgi_template.slurm`) and logs in `./slurm/logs` if you are interested to inspect.
 
 
 ## Development mode

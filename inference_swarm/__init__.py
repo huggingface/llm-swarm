@@ -62,7 +62,7 @@ def test_generation(endpoint):
         },
     }
     response = requests.post(endpoint, headers=headers, json=data)
-    print("✅ test generation", response.json())
+    print("✅ test generation")
 
 class Loader:
     def __init__(self, desc="Loading...", end="✅ Done!", failed="❌ Aborted!", timeout=0.1):
