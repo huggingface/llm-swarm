@@ -7,10 +7,10 @@
 #SBATCH -o slurm/logs/%x_%j.out
 
 # For HF cluster internal users: Check if /fsx directory exists
-if [ -d "/fsx/.cache/vllm" ]; then
-    export volume="/fsx/.cache/vllm"
+if [ -d "/fsx/.cache" ]; then
+    export volume="/fsx/.cache"
 else
-    export volume=".cache/vllm"
+    export volume=".cache"
 fi
 export model=mistralai/Mistral-7B-Instruct-v0.1
 
@@ -35,10 +35,13 @@ fi
 
 echo "Starting TGI container port $PORT"
 echo "http://$(hostname -I | awk '{print $1}'):$PORT" >> {{slurm_hosts_path}}
-# you can cache the container image in /fsx/.../huggingface+text-generation-inference.sqsh'
+# unset cache dirs to avoid pyxis having host env var somehow get into the container
+unset HF_HUB_CACHE HF_ASSETS_CACHE HF_DATASETS_CACHE HF_MODULES_CACHE
+export HF_HUB_CACHE=/root/.cache/huggingface/hub
+export HF_HUB_ENABLE_HF_TRANSFER=0
 srun --container-image='vllm/vllm-openai:latest' \
-     --container-env=HUGGING_FACE_HUB_TOKEN,PORT \
-     --container-mounts="$volume:/root/.cache/huggingface" \
+     --container-env=HUGGING_FACE_HUB_TOKEN,PORT,HF_HUB_CACHE,HF_HUB_ENABLE_HF_TRANSFER \
+     --container-mounts="$volume:/root/.cache/huggingface/hub" \
      --no-container-mount-home \
      --qos normal \
      python3 -m vllm.entrypoints.api_server --model $model --port $PORT

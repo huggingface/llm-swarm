@@ -68,6 +68,7 @@ class Loader:
     def __init__(self, desc="Loading...", end="✅ Done!", failed="❌ Aborted!", timeout=0.1):
         """
         A loader-like context manager
+        Modified from https://stackoverflow.com/a/66558182/6611317
 
         Args:
             desc (str, optional): The loader's description. Defaults to "Loading...".
@@ -181,9 +182,6 @@ class InferenceSwarm:
         slurm_template = slurm_template.replace(r"{{slurm_hosts_path}}", slurm_host_path)
         with open(slurm_path, "w") as f:
             f.write(slurm_template)
-        # hack: disable hf_transfer for vllm (because their docker image does not have it)
-        if self.config.inference_engine == "vllm":
-            os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
 
         # start inference instances
         self.job_ids = [run_command(f"sbatch --parsable {slurm_path}") for _ in range(self.config.instances)]
@@ -241,7 +239,6 @@ class InferenceSwarm:
                             break
                         except requests.exceptions.ConnectionError:
                             sleep(1)
-                print("haha")
             if self.config.inference_engine == "vllm":
                 self.endpoint = f"{self.endpoint}/generate"
         except (KeyboardInterrupt, Exception) as e:

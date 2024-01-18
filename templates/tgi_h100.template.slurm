@@ -7,10 +7,10 @@
 #SBATCH -o slurm/logs/%x_%j.out
 
 # For HF cluster internal users: Check if /fsx directory exists
-if [ -d "/fsx/.cache/tgi" ]; then
-    export volume="/fsx/.cache/tgi"
+if [ -d "/fsx/.cache" ]; then
+    export volume="/fsx/.cache"
 else
-    export volume=".cache/tgi"
+    export volume=".cache"
 fi
 export model=mistralai/Mistral-7B-Instruct-v0.1
 
@@ -35,7 +35,8 @@ fi
 
 echo "Starting TGI container port $PORT"
 echo "http://$(hostname -I | awk '{print $1}'):$PORT" >> {{slurm_hosts_path}}
-# you can cache the container image in /fsx/.../huggingface+text-generation-inference.sqsh'
+# unset cache dirs to avoid pyxis having host env var somehow get into the container
+unset HF_HUB_CACHE HF_ASSETS_CACHE HF_DATASETS_CACHE HF_MODULES_CACHE
 srun --container-image='ghcr.io#huggingface/text-generation-inference' \
      --container-env=HUGGING_FACE_HUB_TOKEN,PORT \
      --container-mounts="$volume:/data" \
