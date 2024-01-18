@@ -11,6 +11,7 @@ from shutil import get_terminal_size
 from threading import Thread
 from time import sleep
 import socket
+
 DataclassT = TypeVar("DataclassT")
 
 
@@ -40,14 +41,13 @@ def run_command(command: str):
 def is_job_running(job_id):
     """Given job id, check if the job is in eunning state (needed to retrieve hostname from logs)"""
     command = "squeue --me --states=R | awk '{print $1}' | tail -n +2"
-    my_running_jobs = subprocess.run(
-        command, shell=True, text=True, capture_output=True
-    ).stdout.splitlines()
+    my_running_jobs = subprocess.run(command, shell=True, text=True, capture_output=True).stdout.splitlines()
     return job_id in my_running_jobs
+
 
 def get_unused_port():
     sock = socket.socket()
-    sock.bind(('', 0))
+    sock.bind(("", 0))
     return sock.getsockname()[1]
 
 
@@ -56,13 +56,14 @@ def test_generation(endpoint):
         "Content-Type": "application/json",
     }
     data = {
-        'inputs': 'What is Deep Learning?',
-        'parameters': {
-            'max_new_tokens': 200,
+        "inputs": "What is Deep Learning?",
+        "parameters": {
+            "max_new_tokens": 200,
         },
     }
-    response = requests.post(endpoint, headers=headers, json=data)
+    requests.post(endpoint, headers=headers, json=data)
     print("✅ test generation")
+
 
 class Loader:
     def __init__(self, desc="Loading...", end="✅ Done!", failed="❌ Aborted!", timeout=0.1):
@@ -77,8 +78,8 @@ class Loader:
             timeout (float, optional): Sleep time between prints. Defaults to 0.1.
         """
         self.desc = desc
-        self.end =  end + " " + self.desc
-        self.failed =  failed + " " + self.desc
+        self.end = end + " " + self.desc
+        self.failed = failed + " " + self.desc
         self.timeout = timeout
 
         self._thread = Thread(target=self._animate, daemon=True)
@@ -140,7 +141,7 @@ def get_endpoints(endpoint_path: str, instances: int = 1) -> List[str]:
                 ), f"#endpoints {len(endpoints)} doesn't match #instances {instances}"  # could read an empty file
                 # due to race condition (slurm writing & us reading)
                 trying = False
-            except (OSError, AssertionError) as e:
+            except (OSError, AssertionError):
                 sleep(1)
     print("obtained endpoints", endpoints)
     for endpoint in endpoints:
@@ -155,15 +156,13 @@ def get_endpoints(endpoint_path: str, instances: int = 1) -> List[str]:
                     sleep(1)
     return endpoints
 
+
 class InferenceSwarm:
-    def __init__(
-        self,
-        config: InferenceSwarmConfig
-    ) -> None:
+    def __init__(self, config: InferenceSwarmConfig) -> None:
         self.config = config
         self.cleaned_up = False
         os.makedirs("slurm/logs", exist_ok=True)
-    
+
     def start(self):
         # if debug endpoint is provided, use it as is
         if self.config.debug_endpoint:
@@ -226,7 +225,7 @@ class InferenceSwarm:
                 last_line = 0
                 while True:
                     logs = run_command(f"sudo docker logs {self.container_id}")
-                    lines = logs.split('\n')
+                    lines = logs.split("\n")
                     for line in lines[last_line:]:
                         print(line)
                     last_line = len(lines)
@@ -242,9 +241,8 @@ class InferenceSwarm:
                             sleep(1)
             if self.config.inference_engine == "vllm":
                 self.endpoint = f"{self.endpoint}/generate"
-        except (KeyboardInterrupt, Exception) as e:
+        except (KeyboardInterrupt, Exception):
             self.cleanup()
-
 
     def __enter__(self):
         self.start()
@@ -260,12 +258,12 @@ class InferenceSwarm:
             return
         for job_id in self.job_ids:
             run_command(f"scancel {job_id}")
-        print(f"inference instances terminated")
+        print("inference instances terminated")
         if self.container_id:
             run_command(f"sudo docker kill {self.container_id}")
-            print(f"docker process terminated")
+            print("docker process terminated")
         self.cleaned_up = True
-        
+
 
 if __name__ == "__main__":
     with InferenceSwarm(

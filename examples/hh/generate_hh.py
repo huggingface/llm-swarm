@@ -11,7 +11,9 @@ from tqdm.asyncio import tqdm_asyncio
 from datasets import load_dataset, Dataset
 import time
 from huggingface_hub import HfApi
+
 api = HfApi()
+
 
 @dataclass
 class Args:
@@ -30,13 +32,14 @@ class Args:
     push_to_hub: bool = False
     """Whether to push to hub"""
 
+
 parser = HfArgumentParser((Args, InferenceSwarmConfig))
 args, isc = parser.parse_args_into_dataclasses()
 if args.timestamp:
     args.repo_id += str(int(time.time()))
 tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-Instruct-v0.1")
 tokenizer.add_special_tokens({"sep_token": "", "cls_token": "", "mask_token": "", "pad_token": "[PAD]"})
-with open(args.constitution_path, 'r') as f:
+with open(args.constitution_path) as f:
     data = json.load(f)
     constitutions = data["constitutions"]
     system_chat = data["system_chat"]
@@ -44,6 +47,8 @@ with open(args.constitution_path, 'r') as f:
 ds = load_dataset("Anthropic/hh-rlhf", data_dir="harmless-base")
 for key in ds:
     ds[key] = ds[key].select(range(args.max_samples))
+
+
 def extract(example):
     # Extract the "Human:" prompts
     example = example["chosen"]
@@ -51,6 +56,8 @@ def extract(example):
     for segment in split_text:
         if "Human:" in segment:
             return {"prompt": segment.split(": ")[1]}
+
+
 ds = ds.map(extract)
 ds.remove_columns(["chosen", "rejected"])
 rate_limit = 500 * isc.instances
@@ -58,6 +65,7 @@ semaphore = asyncio.Semaphore(rate_limit)
 with InferenceSwarm(isc) as inference_swarm:
     client = AsyncInferenceClient(model=inference_swarm.endpoint)
     STOP_SEQ = ["User:", "###", "<|endoftext|>"]
+
     async def process_text(split, i, task):
         chat = system_chat.copy()
         constitution = random.choice(constitutions)
@@ -101,6 +109,7 @@ with InferenceSwarm(isc) as inference_swarm:
         all_ds = defaultdict(lambda: defaultdict(list))
         for result in results:
             [all_ds[result[0]][key].append(value) for key, value in result[3].items()]
+
         def process(example):
             return {
                 "prompt": example["init_prompt"].strip(),
@@ -117,6 +126,7 @@ with InferenceSwarm(isc) as inference_swarm:
                     example["init_response"].strip(),
                 ],
             }
+
         for split in all_ds:
             df = pd.DataFrame(all_ds[split])
             print("=" * 10 + split + "=" * 10)
@@ -126,7 +136,7 @@ with InferenceSwarm(isc) as inference_swarm:
             if args.push_to_hub:
                 post_ds.select(range(len(post_ds) // 2)).push_to_hub(args.repo_id, split=f"{split}_sft")
                 post_ds.select(range(len(post_ds) // 2, len(post_ds))).push_to_hub(args.repo_id, split=f"{split}_prefs")
-                if "/" not in args.repo_id: # find the current user
+                if "/" not in args.repo_id:  # find the current user
                     repo_id = f"{api.whoami()['name']}/{args.repo_id}"
                 api.upload_file(
                     path_or_fileobj=__file__,
@@ -134,4 +144,5 @@ with InferenceSwarm(isc) as inference_swarm:
                     repo_id=repo_id,
                     repo_type="dataset",
                 )
+
     asyncio.run(main())
