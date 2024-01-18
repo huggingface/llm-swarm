@@ -1,4 +1,5 @@
 import asyncio
+import json
 import pandas as pd
 from tgi_swarm import InferenceSwarm, InferenceSwarmConfig
 from huggingface_hub import AsyncInferenceClient
@@ -14,8 +15,8 @@ tasks = [
 with InferenceSwarm(
     InferenceSwarmConfig(
         instances=2,
-        inference_engine="tgi",
-        slurm_template_path="templates/tgi_h100.template.slurm",
+        inference_engine="vllm",
+        slurm_template_path="templates/vllm_h100.template.slurm",
         load_balancer_template_path="templates/nginx.template.conf",
     )
 ) as inference_swarm:
@@ -27,10 +28,14 @@ with InferenceSwarm(
         prompt = tokenizer.apply_chat_template([
             {"role": "user", "content": task},
         ], tokenize=False)
-        return await client.text_generation(
-            prompt=prompt,
-            max_new_tokens=200,
+        response = await client.post(
+            json={
+                "prompt": prompt,
+                "max_tokens": 200,
+            }
         )
+        res = json.loads(response.decode("utf-8"))["text"][0][len(prompt):]
+        return res
 
     async def main():
         results = await tqdm_asyncio.gather(*(process_text(task) for task in tasks))
