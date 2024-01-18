@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 import os
 import subprocess
 import time
-from typing import Generic, Iterable, List, Literal, Tuple, Type, TypeVar, Union
+from typing import Generic, Iterable, List, Literal, Optional, Tuple, Type, TypeVar, Union
 from huggingface_hub import get_session
 import requests
 
@@ -24,6 +24,8 @@ class InferenceSwarmConfig:
     """path to slurm template"""
     load_balancer_template_path: str = "templates/nginx.template.conf"
     """path to load balancer template"""
+    debug_endpoint: Optional[str] = None
+    """endpoint to use for debugging (e.g. http://localhost:13120)"""
 
 
 def run_command(command: str):
@@ -162,14 +164,14 @@ class InferenceSwarm:
         os.makedirs("slurm/logs", exist_ok=True)
     
     def start(self):
-        if self.config.inference_engine == "vllm":
-            print(
-                f"Using vllm_h100.slurm instead of default template {self.config.slurm_template_path}"
-            )
-            template = "vllm_h100.slurm"
-        else:
-            template = self.config.slurm_template_path
-        with open(template) as f:
+        # if debug endpoint is provided, use it as is
+        if self.config.debug_endpoint:
+            self.endpoint = self.config.debug_endpoint
+            if self.config.inference_engine == "vllm":
+                self.endpoint = f"{self.config.debug_endpoint}/generate"
+            return
+
+        with open(self.config.slurm_template_path) as f:
             slurm_template = f.read()
 
         # customize slurm template
@@ -179,6 +181,9 @@ class InferenceSwarm:
         slurm_template = slurm_template.replace(r"{{slurm_hosts_path}}", slurm_host_path)
         with open(slurm_path, "w") as f:
             f.write(slurm_template)
+        # hack: disable hf_transfer for vllm (because their docker image does not have it)
+        if self.config.inference_engine == "vllm":
+            os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
 
         # start inference instances
         self.job_ids = [run_command(f"sbatch --parsable {slurm_path}") for _ in range(self.config.instances)]
@@ -237,7 +242,8 @@ class InferenceSwarm:
                         except requests.exceptions.ConnectionError:
                             sleep(1)
                 print("haha")
-
+            if self.config.inference_engine == "vllm":
+                self.endpoint = f"{self.endpoint}/generate"
         except (KeyboardInterrupt, Exception) as e:
             self.cleanup()
 
@@ -250,6 +256,8 @@ class InferenceSwarm:
         self.cleanup()
 
     def cleanup(self, signum=None, frame=None):
+        if self.config.debug_endpoint:
+            return
         if self.cleaned_up:
             return
         for job_id in self.job_ids:

@@ -1,6 +1,7 @@
 import asyncio
+import json
 import pandas as pd
-from tgi_swarm import InferenceSwarm, InferenceSwarmConfig, test_generation
+from inference_swarm import InferenceSwarm, InferenceSwarmConfig
 from huggingface_hub import AsyncInferenceClient
 from transformers import AutoTokenizer, HfArgumentParser
 from tqdm.asyncio import tqdm_asyncio
@@ -11,8 +12,8 @@ parser = HfArgumentParser(InferenceSwarmConfig)
 isc = parser.parse_args_into_dataclasses()[0]
 tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-Instruct-v0.1")
 tokenizer.add_special_tokens({"sep_token": "", "cls_token": "", "mask_token": "", "pad_token": "[PAD]"})
-ds = load_dataset("Anthropic/hh-rlhf", split="train")
-ds = ds.select(range(10480))
+tasks = load_dataset("Anthropic/hh-rlhf", split="train")
+tasks = tasks.select(range(512))
 def extract(example):
     # Extract the "Human:" prompts
     example = example["chosen"]
@@ -20,7 +21,7 @@ def extract(example):
     for segment in split_text:
         if "Human:" in segment:
             return {"prompt": segment.split(": ")[1]}
-ds = ds.map(extract)["prompt"]
+tasks = tasks.map(extract)["prompt"]
 rate_limit = 500 * isc.instances
 semaphore = asyncio.Semaphore(rate_limit)
 with InferenceSwarm(isc) as inference_swarm:
@@ -28,19 +29,27 @@ with InferenceSwarm(isc) as inference_swarm:
     async def process_text(task):
         async with semaphore:
             prompt = rf"<s>[INST] {task} [\INST]"
-            completion = await client.text_generation(
-                prompt=prompt,
-                max_new_tokens=1500,
-                stop_sequences=["User:", "###", "<|endoftext|>"],
-            )
+            if isc.inference_engine == "tgi":
+                completion = await client.text_generation(
+                    prompt=prompt,
+                    max_new_tokens=1500,
+                    stop_sequences=["User:", "###", "<|endoftext|>"],
+                )
+            elif isc.inference_engine == "vllm":
+                response = await client.post(
+                    json={
+                        "prompt": prompt,
+                        "max_tokens": 200,
+                    }
+                )
+                completion = json.loads(response.decode("utf-8"))["text"][0][len(prompt):]
             tokenized_completion = tokenizer.encode(completion)
             token_length = len(tokenized_completion)
             return completion, token_length
 
     async def main():
         start_time = time.time()
-        tasks = [process_text(task) for task in ds]
-        results = await tqdm_asyncio.gather(*tasks)
+        results = await tqdm_asyncio.gather(*[process_text(task) for task in tasks])
         end_time = time.time()
 
         total_duration = end_time - start_time

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import json
 import random
 import pandas as pd
-from tgi_swarm import InferenceSwarm, InferenceSwarmConfig
+from inference_swarm import InferenceSwarm, InferenceSwarmConfig
 from huggingface_hub import AsyncInferenceClient
 from transformers import AutoTokenizer, HfArgumentParser
 from tqdm.asyncio import tqdm_asyncio
