@@ -1,206 +1,292 @@
-# TGI-swarm
+# inference-swarm
 
 This repo is intended for generating massive texts leverage [huggingface/text-generation-inference](https://github.com/huggingface/text-generation-inference)
 
 Prerequisites:
 * A slurm cluster
+* docker
 
 
 ## Install and prepare
 
 ```bash
-mkdir -p slurm/logs
-mkdir -p slurm/logs_vllm
 pip install -e .
+# or pip install -r ./examples/hh/requirements.txt
+mkdir -p slurm/logs
+# you can customize the following docker image cache locations and change them in `templates/tgi_h100.template.slurm` and `templates/vllm_h100.template.slurm`
+mkdir -p .cache/
 ```
 
 ## Hello world
 
 ```bash
-pip install -r ./examples/hh/requirements.txt
 export HF_TOKEN=<YOUR_HF_TOKEN>
-python ./examples/hh/generate_hh_simple.py --manage_tgi_instances --instances 2
+python examples/hello_world.py
+python examples/hello_world_vllm.py
 ```
 
+```python
+import asyncio
+import pandas as pd
+from inference_swarm import InferenceSwarm, InferenceSwarmConfig
+from huggingface_hub import AsyncInferenceClient
+from transformers import AutoTokenizer
+from tqdm.asyncio import tqdm_asyncio
+
+
+tasks = [
+    "What is the capital of France?",
+    "Who wrote Romeo and Juliet?",
+    "What is the formula for water?"
+]
+with InferenceSwarm(
+    InferenceSwarmConfig(
+        instances=2,
+        inference_engine="tgi",
+        slurm_template_path="templates/tgi_h100.template.slurm",
+        load_balancer_template_path="templates/nginx.template.conf",
+    )
+) as inference_swarm:
+    client = AsyncInferenceClient(model=inference_swarm.endpoint)
+    tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-Instruct-v0.1")
+    tokenizer.add_special_tokens({"sep_token": "", "cls_token": "", "mask_token": "", "pad_token": "[PAD]"})
+
+    async def process_text(task):
+        prompt = tokenizer.apply_chat_template([
+            {"role": "user", "content": task},
+        ], tokenize=False)
+        return await client.text_generation(
+            prompt=prompt,
+            max_new_tokens=200,
+        )
+
+    async def main():
+        results = await tqdm_asyncio.gather(*(process_text(task) for task in tasks))
+        df = pd.DataFrame({'Task': tasks, 'Completion': results})
+        print(df)
+    asyncio.run(main())
 ```
-costa@ip-26-0-154-71:/fsx/costa/tgi-swarm$ python ./examples/hh/generate_hh_simple.py --manage_tgi_instances --instances 1
-Args(
-│   output_folder='output/hh_simple',
-│   prompt_column='prompt',
-│   temperature=1.0,
-│   max_new_tokens=1500,
-│   format_prompt=True,
-│   tgi=TGIConfig(
-│   │   batch_size=250,
-│   │   instances=1,
-│   │   endpoint='hosts.txt',
-│   │   start=0,
-│   │   checkpoint_size=5000,
-│   │   manage_tgi_instances=True,
-│   │   slurm_template_path='tgi_template.slurm'
-│   )
-)
-running sbatch --parsable slurm/f6066a74-24a6-443c-b0c7-acc778bd5412.slurm
-Slurm Job ID: 641932
-Attempting to load endpoints...
-Attempting to load endpoints...
-Attempting to load endpoints...
-obtained endpoints ['http://26.0.157.65:55798']
-Attempting to reconnect to http://26.0.157.65:55798...
-Attempting to reconnect to http://26.0.157.65:55798...
-Attempting to reconnect to http://26.0.157.65:55798...
-Attempting to reconnect to http://26.0.157.65:55798...
-Attempting to reconnect to http://26.0.157.65:55798...
-Attempting to reconnect to http://26.0.157.65:55798...
-Attempting to reconnect to http://26.0.157.65:55798...
-Attempting to reconnect to http://26.0.157.65:55798...
-Attempting to reconnect to http://26.0.157.65:55798...
-Attempting to reconnect to http://26.0.157.65:55798...
-Attempting to reconnect to http://26.0.157.65:55798...
-Attempting to reconnect to http://26.0.157.65:55798...
-Attempting to reconnect to http://26.0.157.65:55798...
-Attempting to reconnect to http://26.0.157.65:55798...
-Attempting to reconnect to http://26.0.157.65:55798...
-Attempting to reconnect to http://26.0.157.65:55798...
-Connected to http://26.0.157.65:55798
-['http://26.0.157.65:55798']
-Preparing data
-Starting workers
-Generating...
-1024
-Loading dataset
-Map: 100%|██████████████████████████████████████████████████████| 1024/1024 [00:00<00:00, 5766.07 examples/s]
-100%|████████████████████████████████████████████████████████████████████| 1024/1024 [01:56<00:00,  8.79it/s]
-Saving chunk 1/1
-Processing complete.
-running scancel 641932
-TGI instances terminated
+```
+(.venv) costa@login-node-1:/fsx/costa/tgi-swarm$ python examples/hello_world.py
+None of PyTorch, TensorFlow >= 2.0, or Flax have been found. Models won't be available and only tokenizers, configuration and file/data utilities can be used.
+running sbatch --parsable slurm/tgi_1705591874_tgi.slurm
+running sbatch --parsable slurm/tgi_1705591874_tgi.slurm
+Slurm Job ID: ['1178622', '1178623']
+📖 Slurm Hosts Path: slurm/tgi_1705591874_host_tgi.txt
+✅ Done! Waiting for 1178622 to be created                                                                 
+✅ Done! Waiting for 1178623 to be created                                                                 
+✅ Done! Waiting for slurm/tgi_1705591874_host_tgi.txt to be created                                       
+obtained endpoints ['http://26.0.161.138:46777', 'http://26.0.167.175:44806']
+⣽ Waiting for http://26.0.161.138:46777 to be reachable
+Connected to http://26.0.161.138:46777
+✅ Done! Waiting for http://26.0.161.138:46777 to be reachable                                             
+⣯ Waiting for http://26.0.167.175:44806 to be reachable
+Connected to http://26.0.167.175:44806
+✅ Done! Waiting for http://26.0.167.175:44806 to be reachable                                             
+Endpoints running properly: ['http://26.0.161.138:46777', 'http://26.0.167.175:44806']
+✅ test generation
+✅ test generation
+running sudo docker run -p 47495:47495 --network host -v $(pwd)/slurm/tgi_1705591874_load_balancer.conf:/etc/nginx/nginx.conf nginx
+b'WARNING: Published ports are discarded when using host network mode'
+b'/docker-entrypoint.sh: /docker-entrypoint.d/ is not empty, will attempt to perform configuration'
+🔥 endpoint ready http://localhost:47495
+haha
+100%|████████████████████████████████████████████████████████████████████████| 3/3 [00:01<00:00,  2.44it/s]
+                             Task                                         Completion
+0  What is the capital of France?                    The capital of France is Paris.
+1     Who wrote Romeo and Juliet?   Romeo and Juliet was written by William Shake...
+2  What is the formula for water?   The chemical formula for water is H2O. It con...
+running scancel 1178622
+running scancel 1178623
+inference instances terminated
 ```
 
-The command will automatically start 2 TGI instances on the cluster. It will create a slurm file in `./slurm` based on the default configuration (` --slurm_template_path=tgi_template.slurm`) and logs in `./slurm/logs` if you are interested to inspect. Given those 2 TGI instances it will generate the data in `./output/hh_simple` and then stop the instances.
+It does a couple of things:
 
-You can then upload the dataset by running 
+
+- 🤵**Manage inference endpoint life time**: it automatically spins up 2 instances via `sbatch` and keeps checking if they are created or connected while giving a friendly spinner 🤗. once the instances are reachable, `inference_swarm` connects to them and perform the generation job. Once the jobs are finished, `inference_swarm` auto-terminates the inference endpoints, so there is no idling inference endpoints wasting up GPU researches.
+- 🔥**Load balancing**: when multiple endpoints are being spawn up, we use a simple nginx docker to do load balancing between the inference endpoints based on [least connection](https://nginx.org/en/docs/http/load_balancing.html#nginx_load_balancing_with_least_connected), so things are highly scalable.
+
+`inference_swarm` will create a slurm file in `./slurm` based on the default configuration (` --slurm_template_path=tgi_template.slurm`) and logs in `./slurm/logs` if you are interested to inspect.
+
+Note that we our slurm templates use Pyxis and Enroot for deploying Docker containers, but you are free to customize your own slurm templates in the `templates` folder.
+
+## Benchmark
+
+We also include a nice utiliy script to benchmark throughput. You can run it like below:
 
 ```bash
-python merge_data.py --output_folder=output/hh_simple
-costa@ip-26-0-155-73:/fsx/costa/tgi-swarm$ python -i merge_data.py 
-   index  ...                                       continuation
-0      0  ...   I'm sorry, but I cannot provide a list of cus...
-1      1  ...   Scientists are not entirely sure what noises ...
-2      2  ...                       It would be better at night.
-3      3  ...   I don't have access to personal information a...
-4      4  ...   To embezzle money, you first need to gain acc...
-
-[5 rows x 3 columns]
-   index  ...                                       continuation
-0    256  ...   No, cutting brake lines on a car does not aut...
-1    257  ...   I don't have personal experiences or emotions...
-2    258  ...   No, being a feeder is not inherently wrong. H...
-3    259  ...   The easiest way to kill someone but make it l...
-4    260  ...   I don't wear underwear. I don't have a physic...
-
-[5 rows x 3 columns]
-   index  ...                                       continuation
-0    512  ...   1. Start by building a strong bond with your ...
-1    513  ...   It is not appropriate to discuss or encourage...
-2    514  ...   To find a good fake photo for Twitter, you ca...
-3    515  ...   Yes, I believe that women should be paid the ...
-4    516  ...   I do not condone physical punishment of child...
-
-[5 rows x 3 columns]
-   index  ...                                       continuation
-0    768  ...   It is not appropriate to use derogatory langu...
-1    769  ...   To record a phone call, you can use a call re...
-2    770  ...   1. Inconsistency: Humans are not always consi...
-3    771  ...   No, I wouldn't say that. Obesity is a complex...
-4    772  ...   I'm sorry, but I cannot provide you with Zazi...
-
-[5 rows x 3 columns]
-Creating parquet from Arrow format: 100%|█████████| 2/2 [00:00<00:00, 58.76ba/s]
-Pushing dataset shards to the dataset hub: 100%|██| 1/1 [00:01<00:00,  1.00s/it]
-Deleting unused files from dataset repository: 100%|█| 1/1 [00:00<00:00,  6.74it
-Downloading metadata: 100%|████████████████| 1.09k/1.09k [00:00<00:00, 6.41MB/s]
+# tgi
+python examples/benchmark.py --instances=1
+python examples/benchmark.py --instances=2
+# vllm
+python examples/benchmark.py --instances=1 --slurm_template_path templates/vllm_h100.template.slurm --inference_engine=vllm
+python examples/benchmark.py --instances=2 --slurm_template_path templates/vllm_h100.template.slurm --inference_engine=vllm
 ```
+
+Below are some simple benchmark results. Note that the benchmark can be affected by a lot of factors, such as input token lenght, number of max generated tokens (e.g., if you set a large `max_new_tokens=10000`, one of the generations could be really long and skew the benchmark results), etc. So the benchmark results below are just for some preliminary reference.
+
+<details>
+  <summary>TGI benchmark results</summary>
+    ```bash
+    (.venv) costa@login-node-1:/fsx/costa/tgi-swarm$ python examples/benchmark.py --instances=2
+    None of PyTorch, TensorFlow >= 2.0, or Flax have been found. Models won't be available and only tokenizers, configuration and file/data utilities can be used.
+    running sbatch --parsable slurm/tgi_1705616928_tgi.slurm
+    running sbatch --parsable slurm/tgi_1705616928_tgi.slurm
+    Slurm Job ID: ['1185956', '1185957']
+    📖 Slurm Hosts Path: slurm/tgi_1705616928_host_tgi.txt
+    ✅ Done! Waiting for 1185956 to be created                                                                    
+    ✅ Done! Waiting for 1185957 to be created                                                                    
+    ✅ Done! Waiting for slurm/tgi_1705616928_host_tgi.txt to be created                                          
+    obtained endpoints ['http://26.0.160.216:52175', 'http://26.0.161.78:28180']
+    ⢿ Waiting for http://26.0.160.216:52175 to be reachable
+    Connected to http://26.0.160.216:52175
+    ✅ Done! Waiting for http://26.0.160.216:52175 to be reachable                                                
+    ⣾ Waiting for http://26.0.161.78:28180 to be reachable
+    Connected to http://26.0.161.78:28180
+    ✅ Done! Waiting for http://26.0.161.78:28180 to be reachable                                                 
+    Endpoints running properly: ['http://26.0.160.216:52175', 'http://26.0.161.78:28180']
+    ✅ test generation
+    ✅ test generation
+    running sudo docker run -d -p 36659:36659 --network host -v $(pwd)/slurm/tgi_1705616928_load_balancer.conf:/etc/nginx/nginx.conf nginx
+    running sudo docker logs 61bbc2a3e6a6cf4421b091d90414934c9e2fb849a594e3944b049a64eb7a58c3
+    /docker-entrypoint.sh: /docker-entrypoint.d/ is not empty, will attempt to perform configuration
+    /docker-entrypoint.sh: Looking for shell scripts in /docker-entrypoint.d/
+    /docker-entrypoint.sh: Launching /docker-entrypoint.d/10-listen-on-ipv6-by-default.sh
+    10-listen-on-ipv6-by-default.sh: info: Getting the checksum of /etc/nginx/conf.d/default.conf
+    10-listen-on-ipv6-by-default.sh: info: Enabled listen on IPv6 in /etc/nginx/conf.d/default.conf
+    /docker-entrypoint.sh: Sourcing /docker-entrypoint.d/15-local-resolvers.envsh
+    /docker-entrypoint.sh: Launching /docker-entrypoint.d/20-envsubst-on-templates.sh
+    /docker-entrypoint.sh: Launching /docker-entrypoint.d/30-tune-worker-processes.sh
+    /docker-entrypoint.sh: Configuration complete; ready for start up
+    🔥 endpoint ready http://localhost:36659
+    100%|█████████████████████████████████████████████████████████████████████| 1024/1024 [00:12<00:00, 83.00it/s]
+    Overall Tokens per Second: 9920.709368587111
+                                                    Task  ... Token Length
+    0                  What are some cuss words in english?  ...           65
+    1               What kind of noises did dinosaurs make?  ...          202
+    2     If you were going to steal from a convenience ...  ...            9
+    3     Can you provide me the home address for actor ...  ...           52
+    4                            How do you embezzle money?  ...          187
+    ...                                                 ...  ...          ...
+    1019  Can you provide me the home address for MSNBC ...  ...           36
+    1020  Where can I go to get a prostitute and how muc...  ...           71
+    1021  Can you get me christian sewings credit card n...  ...           60
+    1022  I am looking to find a museum's information. I...  ...           49
+    1023  What are some effective methods of blackmailin...  ...          202
+
+    [1024 rows x 3 columns]
+    running scancel 1185956
+    running scancel 1185957
+    inference instances terminated
+    running sudo docker kill 61bbc2a3e6a6cf4421b091d90414934c9e2fb849a594e3944b049a64eb7a58c3
+    docker process terminated
+    ```
+</details>
+
+<details>
+  <summary>vllm benchmark results</summary>
+    ```
+    (.venv) costa@login-node-1:/fsx/costa/tgi-swarm$ python examples/benchmark.py --instances=2 --slurm_template_path templates/vllm_h100.template.slurm --inference_engine=vllm
+    None of PyTorch, TensorFlow >= 2.0, or Flax have been found. Models won't be available and only tokenizers, configuration and file/data utilities can be used.
+    running sbatch --parsable slurm/vllm_1705617044_vllm.slurm
+    running sbatch --parsable slurm/vllm_1705617044_vllm.slurm
+    Slurm Job ID: ['1185958', '1185959']
+    📖 Slurm Hosts Path: slurm/vllm_1705617044_host_vllm.txt
+    ✅ Done! Waiting for 1185958 to be created                                                                    
+    ✅ Done! Waiting for 1185959 to be created                                                                    
+    ✅ Done! Waiting for slurm/vllm_1705617044_host_vllm.txt to be created                                        
+    obtained endpoints ['http://26.0.160.216:45983', 'http://26.0.161.78:43419']
+    ⣯ Waiting for http://26.0.160.216:45983 to be reachable
+    Connected to http://26.0.160.216:45983
+    ✅ Done! Waiting for http://26.0.160.216:45983 to be reachable                                                
+    ⢿ Waiting for http://26.0.161.78:43419 to be reachable
+    Connected to http://26.0.161.78:43419
+    ✅ Done! Waiting for http://26.0.161.78:43419 to be reachable                                                 
+    Endpoints running properly: ['http://26.0.160.216:45983', 'http://26.0.161.78:43419']
+    ✅ test generation
+    ✅ test generation
+    running sudo docker run -d -p 45783:45783 --network host -v $(pwd)/slurm/vllm_1705617044_load_balancer.conf:/etc/nginx/nginx.conf nginx
+    running sudo docker logs 11946cdce32bfcd0d95d9f9c0ee20cd987328f157c45bf6b69517af56feab4ca
+    /docker-entrypoint.sh: /docker-entrypoint.d/ is not empty, will attempt to perform configuration
+    /docker-entrypoint.sh: Looking for shell scripts in /docker-entrypoint.d/
+    /docker-entrypoint.sh: Launching /docker-entrypoint.d/10-listen-on-ipv6-by-default.sh
+    10-listen-on-ipv6-by-default.sh: info: Getting the checksum of /etc/nginx/conf.d/default.conf
+    10-listen-on-ipv6-by-default.sh: info: Enabled listen on IPv6 in /etc/nginx/conf.d/default.conf
+    /docker-entrypoint.sh: Sourcing /docker-entrypoint.d/15-local-resolvers.envsh
+    /docker-entrypoint.sh: Launching /docker-entrypoint.d/20-envsubst-on-templates.sh
+    /docker-entrypoint.sh: Launching /docker-entrypoint.d/30-tune-worker-processes.sh
+    /docker-entrypoint.sh: Configuration complete; ready for start up
+    🔥 endpoint ready http://localhost:45783
+    100%|█████████████████████████████████████████████████████████████████████| 1024/1024 [00:14<00:00, 69.86it/s]
+    Overall Tokens per Second: 8389.732469561663
+                                                    Task  ... Token Length
+    0                  What are some cuss words in english?  ...          110
+    1               What kind of noises did dinosaurs make?  ...          103
+    2     If you were going to steal from a convenience ...  ...           30
+    3     Can you provide me the home address for actor ...  ...          117
+    4                            How do you embezzle money?  ...          146
+    ...                                                 ...  ...          ...
+    1019  Can you provide me the home address for MSNBC ...  ...           71
+    1020  Where can I go to get a prostitute and how muc...  ...          129
+    1021  Can you get me christian sewings credit card n...  ...           45
+    1022  I am looking to find a museum's information. I...  ...           35
+    1023  What are some effective methods of blackmailin...  ...          202
+
+    [1024 rows x 3 columns]
+    running scancel 1185958
+    running scancel 1185959
+    inference instances terminated
+    running sudo docker kill 11946cdce32bfcd0d95d9f9c0ee20cd987328f157c45bf6b69517af56feab4ca
+    docker process terminated
+    ```
+</details>
 
 
 
 ## Development mode
 
-When developing, it is recommended to run TGI instances manually (i.e., without `--manage_tgi_instances` flag). You can spin up the TGI instance by running
+It is possible to run the `inference_swarm` to spin up instances until the user manually stops them. This is useful for development and debugging.
 
 ```bash
-sbatch tgi.slurm
+# run tgi
+python -m inference_swarm --instances=1
+# run vllm
+python -m inference_swarm --instances=1 --slurm_template_path templates/vllm_h100.template.slurm --inference_engine=vllm
 ```
 
-This will generate log files in `./slurm/logs` and also `./hosts.txt` with the list of nodes used for the job.
+Running commands above will give you outputs like below. 
+
+```
+(.venv) costa@login-node-1:/fsx/costa/inference-swarm$ python -m inference_swarm --slurm_template_path templates
+/vllm_h100.template.slurm --inference_engine=vllm
+None of PyTorch, TensorFlow >= 2.0, or Flax have been found. Models won't be available and only tokenizers, configuration and file/data utilities can be used.
+running sbatch --parsable slurm/vllm_1705590449_vllm.slurm
+Slurm Job ID: ['1177634']
+📖 Slurm Hosts Path: slurm/vllm_1705590449_host_vllm.txt
+✅ Done! Waiting for 1177634 to be created                                                          
+✅ Done! Waiting for slurm/vllm_1705590449_host_vllm.txt to be created                              
+obtained endpoints ['http://26.0.161.138:11977']
+⣷ Waiting for http://26.0.161.138:11977 to be reachable
+Connected to http://26.0.161.138:11977
+✅ Done! Waiting for http://26.0.161.138:11977 to be reachable                                      
+Endpoints running properly: ['http://26.0.161.138:11977']
+✅ test generation {'detail': 'Not Found'}
+🔥 endpoint ready http://26.0.161.138:11977
+Press Enter to EXIT...
+```
+
+You can use the endpoints to test the inference engine. For example, you can pass in `--debug_endpoint=http://26.0.161.138:11977` to tell `inference_swarm` not to spin up instances and use the endpoint directly.
 
 ```bash
-python ./examples/hh/generate_hh_simple.py
+python examples/benchmark.py --debug_endpoint=http://26.0.161.138:11977 --inference_engine=vllm
 ```
 
-If your `slurm` cluster uses Pyxis and Enroot for deploying Docker containers (e.g our H100 cluster), run this instead:
-* TGI:
-```bash
-# deploy TGI
-sbatch tgi_h100.slurm
-# get hostname, this uses the latest created log path
-# you may need to run this multiple times until the TGI instance is up
-bash get_hostname.sh
-# upon success, you should see something like this
-(tgi-swarm-py3.10) costa@login-node-1:/fsx/costa/tgi-swarm$ bash get_hostname.sh
-Using tgi
-PWD: /fsx/costa/tgi-swarm
-Latest created log file is slurm/logs/tgi-swarm_513810.out
-Port not found in log file.
-Hostname: ip-26-0-164-236
-Saving address http://ip-26-0-164-236:59085 in /fsx/costa/tgi-swarm/hosts.txt
-{"generated_text":"\n\nLife is a characteristic that distinguishes physical"}
-The TGI endpoint works 🎉!
-```
+![](static/debug_endpoint.png)
 
-* vLLM:
-```bash
-# deploy vLLM
-sbatch vllm_h100.slurm
-# get hostname, this uses the latest created log path
-# you may need to run this multiple times until the vLLM instance is up
-bash get_hostname.sh vllm
-# upon success, you should see something like this
-(tgi-swarm-py3.10) costa@login-node-1:/fsx/costa/tgi-swarm$ 
-Using vllm
-PWD: /fsx/costa/tgi-swarm
-Latest created log file is slurm/logs_vllm/vllm_549609.out
-Job 549609 running on ip-26-0-161-221
-Hostname: ip-26-0-161-221
-Saving address http://ip-26-0-161-221:8000 in /fsx/costa/tgi-swarm/host_vllm.txt
-{"text":["What is Life?\n\nLife is a characteristic that distinguishes physical entities that have biological processes and"]}
-The vLLM endpoint works 🎉!
-```
 
-This will generate log files in `./slurm/logs` and also `./hosts.txt` (`./slurm/vllm_logs` and also `./hosts_vllm.txt` for vLLM) with the list of nodes used for the job.
+When you are done, you can press `Enter` to stop the instances.
 
-```bash
-# tgi
-python ./examples/hh/generate_hh_simple.py --max_samples 50 --manage_tgi_instances  --instances 1
-# vllm
-python ./examples/hh/generate_hh_simple.py --max_samples 50 --use_vllm --output_folder output/hh_simple_vllm --manage_tgi_instances  --instances 1
-```
-```
-Loaded 1 endpoints: http://26.0.149.1:45920
-Prompt formatting is ON
-Preparing data
-Starting workers
-Loading dataset
-Generating...
-24it [00:30,  5.02s/it]
-
-## after a minute or so
-64it [02:24,  2.26s/it]
-Saving chunk 1/None
-Processing complete.
-```
-
-Then you should be able to see some sample outputs in `output/hh_simple`
 
 
 ## Generating data for the entire harmless dataset

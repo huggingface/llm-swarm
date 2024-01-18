@@ -1,10 +1,11 @@
 [tool.poetry]
-name = "tgi-swarm"
+name = "inference-swarm"
 version = "0.1.0"
 description = ""
 authors = [
     "Guilherme Penedo <guilherme@huggingface.co>",
     "Shengyi Costa Huang <costa@huggingface.co>",
+    "Loubna Ben Allal <loubna@huggingface.co>",
     "Thomas Wolf <thomas@huggingface.co>",
 ]
 readme = "README.md"
@@ -17,10 +18,14 @@ tqdm = "^4.66.1"
 pandas = "^2.1.2"
 datasets = "^2.14.6"
 tyro = "^0.5.12"
-huggingface-hub = "^0.18.0"
-transformers = "<4.34.1"
+huggingface-hub = "^0.20.2"
+transformers = "^4.36.2"
 jinja2 = "^3.1.2"
 wonderwords = "^2.2.0"
+hf-transfer = "^0.1.4"
+
+[tool.poetry.group.dev.dependencies]
+pre-commit = "^3.6.0"
 
 [tool.ruff]
 ignore = ["E501", "E741", "W605"]
