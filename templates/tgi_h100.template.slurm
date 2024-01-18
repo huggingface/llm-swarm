@@ -6,7 +6,12 @@
 #SBATCH --mem-per-cpu=11G
 #SBATCH -o slurm/logs/%x_%j.out
 
-export volume=.cache/tgi
+# For HF cluster internal users: Check if /fsx directory exists
+if [ -d "/fsx/.cache/tgi" ]; then
+    export volume="/fsx/.cache/tgi"
+else
+    export volume=".cache/tgi"
+fi
 export model=mistralai/Mistral-7B-Instruct-v0.1
 
 function unused_port() {

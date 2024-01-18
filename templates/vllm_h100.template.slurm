@@ -6,7 +6,12 @@
 #SBATCH --mem-per-cpu=11G
 #SBATCH -o slurm/logs/%x_%j.out
 
-export volume=.cache/vllm
+# For HF cluster internal users: Check if /fsx directory exists
+if [ -d "/fsx/.cache/vllm" ]; then
+    export volume="/fsx/.cache/vllm"
+else
+    export volume=".cache/vllm"
+fi
 export model=mistralai/Mistral-7B-Instruct-v0.1
 
 function unused_port() {
