@@ -13,7 +13,7 @@ isc = parser.parse_args_into_dataclasses()[0]
 tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-Instruct-v0.1")
 tokenizer.add_special_tokens({"sep_token": "", "cls_token": "", "mask_token": "", "pad_token": "[PAD]"})
 tasks = load_dataset("Anthropic/hh-rlhf", split="train")
-tasks = tasks.select(range(512))
+tasks = tasks.select(range(1024))
 def extract(example):
     # Extract the "Human:" prompts
     example = example["chosen"]

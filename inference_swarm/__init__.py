@@ -188,6 +188,7 @@ class InferenceSwarm:
         print(f"Slurm Job ID: {self.job_ids}")
         print(f"📖 Slurm Hosts Path: {slurm_host_path}")
 
+        self.container_id = None
         try:
             # ensure job is running
             for job_id in self.job_ids:
@@ -217,20 +218,20 @@ class InferenceSwarm:
                 with open(load_balancer_path, "w") as f:
                     f.write(load_balancer_template)
                 load_balance_endpoint = f"http://localhost:{unused_port}"
-                command = f"sudo docker run -p {unused_port}:{unused_port} --network host -v $(pwd)/{load_balancer_path}:/etc/nginx/nginx.conf nginx"
+                command = f"sudo docker run -d -p {unused_port}:{unused_port} --network host -v $(pwd)/{load_balancer_path}:/etc/nginx/nginx.conf nginx"
                 load_balance_endpoint_connected = False
 
                 # run docker streaming output while we validate the endpoints
-                print(f"running {command}")
-                process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
+                self.container_id = run_command(command)
+                last_line = 0
                 while True:
-                    output = process.stdout.readline()
-                    if output == '' and process.poll() is not None:
-                        break
-                    if not output:
-                        continue
+                    logs = run_command(f"sudo docker logs {self.container_id}")
+                    lines = logs.split('\n')
+                    for line in lines[last_line:]:
+                        print(line)
+                    last_line = len(lines)
+
                     if not load_balance_endpoint_connected:
-                        print(output.strip())
                         try:
                             get_session().get(f"{load_balance_endpoint}/health")
                             print(f"🔥 endpoint ready {load_balance_endpoint}")
@@ -260,6 +261,9 @@ class InferenceSwarm:
         for job_id in self.job_ids:
             run_command(f"scancel {job_id}")
         print(f"inference instances terminated")
+        if self.container_id:
+            run_command(f"sudo docker kill {self.container_id}")
+            print(f"docker process terminated")
         self.cleaned_up = True
         
 
