@@ -32,7 +32,7 @@ with InferenceSwarm(isc) as inference_swarm:
             if isc.inference_engine == "tgi":
                 completion = await client.text_generation(
                     prompt=prompt,
-                    max_new_tokens=1500,
+                    max_new_tokens=200,
                     stop_sequences=["User:", "###", "<|endoftext|>"],
                 )
             elif isc.inference_engine == "vllm":
