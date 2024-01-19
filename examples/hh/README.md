@@ -2,6 +2,8 @@
 Generate some system chats.
 ```
 python examples/hh/generate_system_chat.py --debug_endpoint="https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1"
+python examples/hh/generate_system_chat.py --constitution_path="examples/hh/grok_constituion.json" --debug_endpoint="https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1"
+```
 ```
 
 Inspect the generated chats and make some modification
@@ -10,12 +12,14 @@ Inspect the generated chats and make some modification
 Run the cai dataset generation script to debug
 ```
 python examples/hh/generate_hh.py --push_to_hub
+python examples/hh/generate_hh.py --push_to_hub --constitution_path="examples/hh/grok_constituion.json"
 ```
 
 
 generate the whole dataset
 ```
 python examples/hh/generate_hh.py --push_to_hub --max_samples=-1 --instances=8
+python examples/hh/generate_hh.py --constitution_path="examples/hh/grok_constituion.json" --push_to_hub --max_samples=-1 --instances=10
 ```
 ```
 (.venv) costa@login-node-1:/fsx/costa/tgi-swarm$ python examples/hh/generate_hh.py --push_to_hub --max_samples=-1 --instances=6
