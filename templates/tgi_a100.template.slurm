@@ -35,17 +35,16 @@ fi
 
 echo "Starting TGI container port $PORT"
 echo "http://$(hostname -I | awk '{print $1}'):$PORT" >> {{slurm_hosts_path}}
-# unset cache dirs to avoid pyxis having host env var somehow get into the container
-unset HF_HUB_CACHE HF_ASSETS_CACHE HF_DATASETS_CACHE HF_MODULES_CACHE
-export HF_HUB_CACHE=/root/.cache/huggingface/hub
-export HF_HUB_ENABLE_HF_TRANSFER=0
-srun --container-image='vllm/vllm-openai:latest' \
-    --container-env=HUGGING_FACE_HUB_TOKEN,PORT,HF_HUB_CACHE,HF_HUB_ENABLE_HF_TRANSFER \
-    --container-mounts="$volume:/root/.cache/huggingface/hub" \
-    --no-container-mount-home \
-    --qos normal \
-    python3 -m vllm.entrypoints.api_server \
-    --model $model \
-    --port $PORT
+sudo docker run \
+    -e HUGGING_FACE_HUB_TOKEN=$HF_TOKEN \
+    --gpus "\"device=$CUDA_VISIBLE_DEVICES"\" \
+    --shm-size 1g \
+    -v $volume:/data -p $PORT:80 \
+    ghcr.io/huggingface/text-generation-inference \
+    --model-id $model \
+    --max-concurrent-requests 2000 \
+    --max-total-tokens 8192 \
+    --max-input-length 7144 \
+    --max-batch-prefill-tokens 8192 \
 
 echo "End of job"

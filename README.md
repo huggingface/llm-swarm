@@ -109,6 +109,8 @@ It does a couple of things:
 
 `inference_swarm` will create a slurm file in `./slurm` based on the default configuration (` --slurm_template_path=tgi_template.slurm`) and logs in `./slurm/logs` if you are interested to inspect.
 
+#### Pyxis and Enroot 
+
 Note that we our slurm templates use Pyxis and Enroot for deploying Docker containers, but you are free to customize your own slurm templates in the `templates` folder.
 
 ## Benchmark

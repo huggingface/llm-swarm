@@ -38,14 +38,15 @@ echo "http://$(hostname -I | awk '{print $1}'):$PORT" >> {{slurm_hosts_path}}
 # unset cache dirs to avoid pyxis having host env var somehow get into the container
 unset HF_HUB_CACHE HF_ASSETS_CACHE HF_DATASETS_CACHE HF_MODULES_CACHE
 srun --container-image='ghcr.io#huggingface/text-generation-inference' \
-     --container-env=HUGGING_FACE_HUB_TOKEN,PORT \
-     --container-mounts="$volume:/data" \
-     --no-container-mount-home \
-     --qos normal \
-     /usr/local/bin/text-generation-launcher --model-id $model \
-     --max-concurrent-requests 2000 \
-     --max-total-tokens 8192 \
-     --max-input-length 7144 \
-     --max-batch-prefill-tokens 8192 \
-    
+    --container-env=HUGGING_FACE_HUB_TOKEN,PORT \
+    --container-mounts="$volume:/data" \
+    --no-container-mount-home \
+    --qos normal \
+    /usr/local/bin/text-generation-launcher \
+    --model-id $model \
+    --max-concurrent-requests 2000 \
+    --max-total-tokens 8192 \
+    --max-input-length 7144 \
+    --max-batch-prefill-tokens 8192 \
+
 echo "End of job"

@@ -15,7 +15,7 @@ python examples/hh/generate_hh.py --push_to_hub
 
 generate the whole dataset
 ```
-python examples/hh/generate_hh.py --push_to_hub --max_samples=-1 --instances=6
+python examples/hh/generate_hh.py --push_to_hub --max_samples=-1 --instances=8
 ```
 ```
 (.venv) costa@login-node-1:/fsx/costa/tgi-swarm$ python examples/hh/generate_hh.py --push_to_hub --max_samples=-1 --instances=6
