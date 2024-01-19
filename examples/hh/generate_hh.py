@@ -46,7 +46,8 @@ with open(args.constitution_path) as f:
     system_chat = [item for sublist in system_chat for item in sublist]
 ds = load_dataset("Anthropic/hh-rlhf", data_dir="harmless-base")
 for key in ds:
-    ds[key] = ds[key].select(range(args.max_samples))
+    max_samples = len(ds[key]) if args.max_samples == -1 else args.max_samples
+    ds[key] = ds[key].select(range(max_samples))
 
 
 def extract(example):
@@ -114,16 +115,16 @@ with InferenceSwarm(isc) as inference_swarm:
             return {
                 "prompt": example["init_prompt"].strip(),
                 "messages": [
-                    example["init_prompt"].strip(),
-                    example["revision_response"].strip(),
+                    {"role": "user", "content": example["init_prompt"].strip()},
+                    {"role": "assistant", "content": example["revision_response"].strip()},
                 ],
                 "chosen": [
-                    example["init_prompt"].strip(),
-                    example["revision_response"].strip(),
+                    {"role": "user", "content": example["init_prompt"].strip()},
+                    {"role": "assistant", "content": example["revision_response"].strip()},
                 ],
                 "rejected": [
-                    example["init_prompt"].strip(),
-                    example["init_response"].strip(),
+                    {"role": "user", "content": example["init_prompt"].strip()},
+                    {"role": "assistant", "content": example["init_response"].strip()},
                 ],
             }
 
@@ -138,11 +139,12 @@ with InferenceSwarm(isc) as inference_swarm:
                 post_ds.select(range(len(post_ds) // 2, len(post_ds))).push_to_hub(args.repo_id, split=f"{split}_prefs")
                 if "/" not in args.repo_id:  # find the current user
                     repo_id = f"{api.whoami()['name']}/{args.repo_id}"
-                api.upload_file(
-                    path_or_fileobj=__file__,
-                    path_in_repo="create_dataset.py",
-                    repo_id=repo_id,
-                    repo_type="dataset",
-                )
+                for file, name in zip([__file__, args.constitution_path], ["create_dataset.py", "constitution.json"]):
+                    api.upload_file(
+                        path_or_fileobj=file,
+                        path_in_repo=name,
+                        repo_id=repo_id,
+                        repo_type="dataset",
+                    )
 
     asyncio.run(main())
