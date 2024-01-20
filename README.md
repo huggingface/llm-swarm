@@ -124,7 +124,7 @@ python examples/benchmark.py --instances=2
 # vllm
 python examples/benchmark.py --instances=1 --slurm_template_path templates/vllm_h100.template.slurm --inference_engine=vllm
 python examples/benchmark.py --instances=2 --slurm_template_path templates/vllm_h100.template.slurm --inference_engine=vllm
-python examples/benchmark.py --instances=2 --slurm_template_path templates/vllm_h100.template_pythia.slurm --inference_engine=vllm
+python examples/benchmark.py --instances=2 --slurm_template_path templates/vllm_h100.template.slurm --inference_engine=vllm --model=EleutherAI/pythia-6.9b-deduped
 ```
 
 Below are some simple benchmark results. Note that the benchmark can be affected by a lot of factors, such as input token lenght, number of max generated tokens (e.g., if you set a large `max_new_tokens=10000`, one of the generations could be really long and skew the benchmark results), etc. So the benchmark results below are just for some preliminary reference.

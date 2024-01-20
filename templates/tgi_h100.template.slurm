@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=inference-swarm
 #SBATCH --partition hopper-prod
-#SBATCH --gpus=8
+#SBATCH --gpus={{gpus}}
 #SBATCH --cpus-per-task=12
 #SBATCH --mem-per-cpu=11G
 #SBATCH -o slurm/logs/%x_%j.out
@@ -12,7 +12,8 @@ if [ -d "/fsx/.cache" ]; then
 else
     export volume=".cache"
 fi
-export model=mistralai/Mistral-7B-Instruct-v0.1
+export model={{model}}
+export revision={{revision}}
 
 function unused_port() {
     N=${1:-1}
@@ -44,6 +45,7 @@ srun --container-image='ghcr.io#huggingface/text-generation-inference' \
     --qos normal \
     /usr/local/bin/text-generation-launcher \
     --model-id $model \
+    --revision $revision \
     --max-concurrent-requests 2000 \
     --max-total-tokens 8192 \
     --max-input-length 7144 \
