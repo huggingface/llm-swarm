@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=inference-swarm
 #SBATCH --partition hopper-prod
-#SBATCH --gpus=8
+#SBATCH --gpus={{gpus}}
 #SBATCH --cpus-per-task=12
 #SBATCH --mem-per-cpu=11G
 #SBATCH -o slurm/logs/%x_%j.out
@@ -12,7 +12,8 @@ if [ -d "/fsx/.cache" ]; then
 else
     export volume=".cache"
 fi
-export model=mistralai/Mistral-7B-Instruct-v0.1
+export model={{model}}
+export revision={{revision}}
 
 function unused_port() {
     N=${1:-1}
@@ -40,10 +41,13 @@ unset HF_HUB_CACHE HF_ASSETS_CACHE HF_DATASETS_CACHE HF_MODULES_CACHE
 export HF_HUB_CACHE=/root/.cache/huggingface/hub
 export HF_HUB_ENABLE_HF_TRANSFER=0
 srun --container-image='vllm/vllm-openai:latest' \
-     --container-env=HUGGING_FACE_HUB_TOKEN,PORT,HF_HUB_CACHE,HF_HUB_ENABLE_HF_TRANSFER \
-     --container-mounts="$volume:/root/.cache/huggingface/hub" \
-     --no-container-mount-home \
-     --qos normal \
-     python3 -m vllm.entrypoints.api_server --model $model --port $PORT
-    
+    --container-env=HUGGING_FACE_HUB_TOKEN,PORT,HF_HUB_CACHE,HF_HUB_ENABLE_HF_TRANSFER \
+    --container-mounts="$volume:/root/.cache/huggingface/hub" \
+    --no-container-mount-home \
+    --qos normal \
+    python3 -m vllm.entrypoints.api_server \
+    --model $model \
+    --revision $revision \
+    --port $PORT
+
 echo "End of job"

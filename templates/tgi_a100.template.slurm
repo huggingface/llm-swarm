@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=inference-swarm
 #SBATCH --partition hopper-prod
-#SBATCH --gpus={{gpus}}
+#SBATCH --gpus=8
 #SBATCH --cpus-per-task=12
 #SBATCH --mem-per-cpu=11G
 #SBATCH -o slurm/logs/%x_%j.out
@@ -12,8 +12,7 @@ if [ -d "/fsx/.cache" ]; then
 else
     export volume=".cache"
 fi
-export model={{model}}
-export revision={{revision}}
+export model=mistralai/Mistral-7B-Instruct-v0.1
 
 function unused_port() {
     N=${1:-1}
@@ -36,16 +35,13 @@ fi
 
 echo "Starting TGI container port $PORT"
 echo "http://$(hostname -I | awk '{print $1}'):$PORT" >> {{slurm_hosts_path}}
-# unset cache dirs to avoid pyxis having host env var somehow get into the container
-unset HF_HUB_CACHE HF_ASSETS_CACHE HF_DATASETS_CACHE HF_MODULES_CACHE
-srun --container-image='ghcr.io#huggingface/text-generation-inference' \
-    --container-env=HUGGING_FACE_HUB_TOKEN,PORT \
-    --container-mounts="$volume:/data" \
-    --no-container-mount-home \
-    --qos normal \
-    /usr/local/bin/text-generation-launcher \
+sudo docker run \
+    -e HUGGING_FACE_HUB_TOKEN=$HF_TOKEN \
+    --gpus "\"device=$CUDA_VISIBLE_DEVICES"\" \
+    --shm-size 1g \
+    -v $volume:/data -p $PORT:80 \
+    ghcr.io/huggingface/text-generation-inference \
     --model-id $model \
-    --revision $revision \
     --max-concurrent-requests 2000 \
     --max-total-tokens 8192 \
     --max-input-length 7144 \

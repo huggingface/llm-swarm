@@ -23,6 +23,12 @@ class InferenceSwarmConfig:
     """inference engine to use"""
     slurm_template_path: str = "templates/tgi_h100.template.slurm"
     """path to slurm template"""
+    model: str = "mistralai/Mistral-7B-Instruct-v0.1"
+    """the name of the HF model or path to use"""
+    revision: str = "main"
+    """the revision of the model to use"""
+    gpus: int = 8
+    """number of gpus per instance"""
     load_balancer_template_path: str = "templates/nginx.template.conf"
     """path to load balancer template"""
     debug_endpoint: Optional[str] = None
@@ -179,6 +185,9 @@ class InferenceSwarm:
         slurm_path = os.path.join("slurm", f"{self.filename}_{self.config.inference_engine}.slurm")
         slurm_host_path = os.path.join("slurm", f"{self.filename}_host_{self.config.inference_engine}.txt")
         slurm_template = slurm_template.replace(r"{{slurm_hosts_path}}", slurm_host_path)
+        slurm_template = slurm_template.replace(r"{{model}}", self.config.model)
+        slurm_template = slurm_template.replace(r"{{revision}}", self.config.revision)
+        slurm_template = slurm_template.replace(r"{{gpus}}", str(self.config.gpus))
         with open(slurm_path, "w") as f:
             f.write(slurm_template)
 
