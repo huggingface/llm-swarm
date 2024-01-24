@@ -131,7 +131,7 @@ Below are some simple benchmark results. Note that the benchmark can be affected
 
 <details>
   <summary>TGI benchmark results</summary>
-    ```bash
+    
     (.venv) costa@login-node-1:/fsx/costa/tgi-swarm$ python examples/benchmark.py --instances=2
     None of PyTorch, TensorFlow >= 2.0, or Flax have been found. Models won't be available and only tokenizers, configuration and file/data utilities can be used.
     running sbatch --parsable slurm/tgi_1705616928_tgi.slurm
@@ -184,12 +184,11 @@ Below are some simple benchmark results. Note that the benchmark can be affected
     inference instances terminated
     running sudo docker kill 61bbc2a3e6a6cf4421b091d90414934c9e2fb849a594e3944b049a64eb7a58c3
     docker process terminated
-    ```
 </details>
 
 <details>
   <summary>vllm benchmark results</summary>
-    ```
+
     (.venv) costa@login-node-1:/fsx/costa/tgi-swarm$ python examples/benchmark.py --instances=2 --slurm_template_path templates/vllm_h100.template.slurm --inference_engine=vllm
     None of PyTorch, TensorFlow >= 2.0, or Flax have been found. Models won't be available and only tokenizers, configuration and file/data utilities can be used.
     running sbatch --parsable slurm/vllm_1705617044_vllm.slurm
@@ -242,7 +241,7 @@ Below are some simple benchmark results. Note that the benchmark can be affected
     inference instances terminated
     running sudo docker kill 11946cdce32bfcd0d95d9f9c0ee20cd987328f157c45bf6b69517af56feab4ca
     docker process terminated
-    ```
+
 </details>
 
 
