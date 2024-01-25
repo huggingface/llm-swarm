@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import json
 import random
 import pandas as pd
-from inference_swarm import InferenceSwarm, InferenceSwarmConfig
+from llm_swarm import LLMSwarm, LLMSwarmConfig
 from huggingface_hub import AsyncInferenceClient
 from transformers import AutoTokenizer, HfArgumentParser
 from tqdm.asyncio import tqdm_asyncio
@@ -33,7 +33,7 @@ class Args:
     """Whether to push to hub"""
 
 
-parser = HfArgumentParser((Args, InferenceSwarmConfig))
+parser = HfArgumentParser((Args, LLMSwarmConfig))
 args, isc = parser.parse_args_into_dataclasses()
 if args.timestamp:
     args.repo_id += str(int(time.time()))
@@ -63,8 +63,8 @@ ds = ds.map(extract)
 ds.remove_columns(["chosen", "rejected"])
 rate_limit = 500 * isc.instances
 semaphore = asyncio.Semaphore(rate_limit)
-with InferenceSwarm(isc) as inference_swarm:
-    client = AsyncInferenceClient(model=inference_swarm.endpoint)
+with LLMSwarm(isc) as llm_swarm:
+    client = AsyncInferenceClient(model=llm_swarm.endpoint)
     STOP_SEQ = ["User:", "###", "<|endoftext|>"]
 
     async def process_text(split, i, task):

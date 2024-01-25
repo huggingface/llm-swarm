@@ -6,7 +6,7 @@ import os
 import random
 from typing import List
 import pandas as pd
-from inference_swarm import InferenceSwarm, InferenceSwarmConfig
+from llm_swarm import LLMSwarm, LLMSwarmConfig
 from huggingface_hub import AsyncInferenceClient
 from transformers import AutoTokenizer, HfArgumentParser
 from tqdm.asyncio import tqdm_asyncio
@@ -35,7 +35,7 @@ class Args:
     ])
 
 
-parser = HfArgumentParser((Args, InferenceSwarmConfig))
+parser = HfArgumentParser((Args, LLMSwarmConfig))
 args, isc = parser.parse_args_into_dataclasses()
 
 # get base dir of the constitution
@@ -51,8 +51,8 @@ with open(args.constitution_path) as f:
     constitutions = data["constitutions"]
 rate_limit = 500 * isc.instances
 semaphore = asyncio.Semaphore(rate_limit)
-with InferenceSwarm(isc) as inference_swarm:
-    client = AsyncInferenceClient(model=inference_swarm.endpoint)
+with LLMSwarm(isc) as llm_swarm:
+    client = AsyncInferenceClient(model=llm_swarm.endpoint)
     STOP_SEQ = ["User:", "###", "<|endoftext|>"]
 
     async def process_text(task):

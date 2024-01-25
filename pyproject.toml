@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "inference-swarm"
+name = "llm-swarm"
 version = "0.1.0"
 description = ""
 authors = [

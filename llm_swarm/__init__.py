@@ -16,7 +16,7 @@ DataclassT = TypeVar("DataclassT")
 
 
 @dataclass
-class InferenceSwarmConfig:
+class LLMSwarmConfig:
     instances: int = 1
     """number of inference instances"""
     inference_engine: Literal["tgi", "vllm"] = "tgi"
@@ -163,8 +163,8 @@ def get_endpoints(endpoint_path: str, instances: int = 1) -> List[str]:
     return endpoints
 
 
-class InferenceSwarm:
-    def __init__(self, config: InferenceSwarmConfig) -> None:
+class LLMSwarm:
+    def __init__(self, config: LLMSwarmConfig) -> None:
         self.config = config
         self.cleaned_up = False
         os.makedirs("slurm/logs", exist_ok=True)
@@ -275,14 +275,14 @@ class InferenceSwarm:
 
 
 if __name__ == "__main__":
-    with InferenceSwarm(
-        InferenceSwarmConfig(
+    with LLMSwarm(
+        LLMSwarmConfig(
             instances=3,
             inference_engine="tgi",
             slurm_template_path="templates/tgi_h100.template.slurm",
             load_balancer_template_path="templates/nginx.template.conf",
         )
-    ) as inference_swarm:
+    ) as llm_swarm:
         while True:
             input("Press Enter to EXIT...")
             break

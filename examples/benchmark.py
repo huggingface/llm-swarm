@@ -1,14 +1,14 @@
 import asyncio
 import json
 import pandas as pd
-from inference_swarm import InferenceSwarm, InferenceSwarmConfig
+from llm_swarm import LLMSwarm, LLMSwarmConfig
 from huggingface_hub import AsyncInferenceClient
 from transformers import AutoTokenizer, HfArgumentParser
 from tqdm.asyncio import tqdm_asyncio
 from datasets import load_dataset
 import time
 
-parser = HfArgumentParser(InferenceSwarmConfig)
+parser = HfArgumentParser(LLMSwarmConfig)
 isc = parser.parse_args_into_dataclasses()[0]
 tokenizer = AutoTokenizer.from_pretrained(isc.model, revision=isc.revision)
 tasks = load_dataset("Anthropic/hh-rlhf", split="train")
@@ -27,8 +27,8 @@ def extract(example):
 tasks = tasks.map(extract)["prompt"]
 rate_limit = 500 * isc.instances
 semaphore = asyncio.Semaphore(rate_limit)
-with InferenceSwarm(isc) as inference_swarm:
-    client = AsyncInferenceClient(model=inference_swarm.endpoint)
+with LLMSwarm(isc) as llm_swarm:
+    client = AsyncInferenceClient(model=llm_swarm.endpoint)
 
     async def process_text(task):
         async with semaphore:
