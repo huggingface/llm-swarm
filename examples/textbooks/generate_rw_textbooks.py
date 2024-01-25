@@ -20,7 +20,7 @@ from datatrove.io import S3OutputDataFolder, S3InputDataFolder
 from datatrove.data import Document
 from datatrove.utils.stats import PipelineStats
 
-from inference_swarm import SENTINEL, TGIConfig, generate_data
+from llm_swarm import SENTINEL, TGIConfig, generate_data
 
 
 @dataclass

@@ -1,9 +1,9 @@
-from inference_swarm import InferenceSwarmConfig, InferenceSwarm
+from llm_swarm import LLMSwarmConfig, LLMSwarm
 from transformers import HfArgumentParser
 
-parser = HfArgumentParser(InferenceSwarmConfig)
+parser = HfArgumentParser(LLMSwarmConfig)
 isc = parser.parse_args_into_dataclasses()[0]
-with InferenceSwarm(isc) as inference_swarm:
+with LLMSwarm(isc) as llm_swarm:
     while True:
         input("Press Enter to EXIT...")
         break

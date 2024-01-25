@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import json
 import random
 import pandas as pd
-from inference_swarm import InferenceSwarm, InferenceSwarmConfig
+from llm_swarm import LLMSwarm, LLMSwarmConfig
 from huggingface_hub import AsyncInferenceClient
 from transformers import AutoTokenizer, HfArgumentParser
 from tqdm.asyncio import tqdm_asyncio
@@ -33,7 +33,7 @@ class Args:
     """Whether to push to hub"""
 
 
-parser = HfArgumentParser((Args, InferenceSwarmConfig))
+parser = HfArgumentParser((Args, LLMSwarmConfig))
 args, isc = parser.parse_args_into_dataclasses()
 if args.timestamp:
     args.repo_id += str(int(time.time()))
@@ -63,8 +63,8 @@ ds = ds.map(extract)
 ds.remove_columns(["chosen", "rejected"])
 rate_limit = 500 * isc.instances
 semaphore = asyncio.Semaphore(rate_limit)
-with InferenceSwarm(isc) as inference_swarm:
-    client = AsyncInferenceClient(model=inference_swarm.endpoint)
+with LLMSwarm(isc) as llm_swarm:
+    client = AsyncInferenceClient(model=llm_swarm.endpoint)
     STOP_SEQ = ["User:", "###", "<|endoftext|>"]
 
     async def process_text(split, i, task):
@@ -99,7 +99,9 @@ with InferenceSwarm(isc) as inference_swarm:
     async def main():
         start_time = time.time()
         tasks = [process_text(split, idx, row["prompt"]) for split in ds for idx, row in enumerate(ds[split])]
-        print(f"WARNING: the first generation can hang like this for up to 1 hour because it will finish the first two turns of conversation of the entire dataset")
+        print(
+            "WARNING: the first generation can hang like this for up to 1 hour because it will finish the first two turns of conversation of the entire dataset"
+        )
         results = await tqdm_asyncio.gather(*tasks)
         end_time = time.time()
 

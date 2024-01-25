@@ -28,7 +28,7 @@ python examples/hello_world_vllm.py
 ```python
 import asyncio
 import pandas as pd
-from inference_swarm import InferenceSwarm, InferenceSwarmConfig
+from llm_swarm import LLMSwarm, LLMSwarmConfig
 from huggingface_hub import AsyncInferenceClient
 from transformers import AutoTokenizer
 from tqdm.asyncio import tqdm_asyncio
@@ -39,15 +39,15 @@ tasks = [
     "Who wrote Romeo and Juliet?",
     "What is the formula for water?"
 ]
-with InferenceSwarm(
-    InferenceSwarmConfig(
+with LLMSwarm(
+    LLMSwarmConfig(
         instances=2,
         inference_engine="tgi",
         slurm_template_path="templates/tgi_h100.template.slurm",
         load_balancer_template_path="templates/nginx.template.conf",
     )
-) as inference_swarm:
-    client = AsyncInferenceClient(model=inference_swarm.endpoint)
+) as llm_swarm:
+    client = AsyncInferenceClient(model=llm_swarm.endpoint)
     tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-Instruct-v0.1")
     tokenizer.add_special_tokens({"sep_token": "", "cls_token": "", "mask_token": "", "pad_token": "[PAD]"})
 
@@ -104,10 +104,10 @@ inference instances terminated
 It does a couple of things:
 
 
-- 🤵**Manage inference endpoint life time**: it automatically spins up 2 instances via `sbatch` and keeps checking if they are created or connected while giving a friendly spinner 🤗. once the instances are reachable, `inference_swarm` connects to them and perform the generation job. Once the jobs are finished, `inference_swarm` auto-terminates the inference endpoints, so there is no idling inference endpoints wasting up GPU researches.
+- 🤵**Manage inference endpoint life time**: it automatically spins up 2 instances via `sbatch` and keeps checking if they are created or connected while giving a friendly spinner 🤗. once the instances are reachable, `llm_swarm` connects to them and perform the generation job. Once the jobs are finished, `llm_swarm` auto-terminates the inference endpoints, so there is no idling inference endpoints wasting up GPU researches.
 - 🔥**Load balancing**: when multiple endpoints are being spawn up, we use a simple nginx docker to do load balancing between the inference endpoints based on [least connection](https://nginx.org/en/docs/http/load_balancing.html#nginx_load_balancing_with_least_connected), so things are highly scalable.
 
-`inference_swarm` will create a slurm file in `./slurm` based on the default configuration (` --slurm_template_path=tgi_template.slurm`) and logs in `./slurm/logs` if you are interested to inspect.
+`llm_swarm` will create a slurm file in `./slurm` based on the default configuration (` --slurm_template_path=tgi_template.slurm`) and logs in `./slurm/logs` if you are interested to inspect.
 
 #### Pyxis and Enroot 
 
@@ -248,19 +248,19 @@ Below are some simple benchmark results. Note that the benchmark can be affected
 
 ## Development mode
 
-It is possible to run the `inference_swarm` to spin up instances until the user manually stops them. This is useful for development and debugging.
+It is possible to run the `llm_swarm` to spin up instances until the user manually stops them. This is useful for development and debugging.
 
 ```bash
 # run tgi
-python -m inference_swarm --instances=1
+python -m llm_swarm --instances=1
 # run vllm
-python -m inference_swarm --instances=1 --slurm_template_path templates/vllm_h100.template.slurm --inference_engine=vllm
+python -m llm_swarm --instances=1 --slurm_template_path templates/vllm_h100.template.slurm --inference_engine=vllm
 ```
 
 Running commands above will give you outputs like below. 
 
 ```
-(.venv) costa@login-node-1:/fsx/costa/inference-swarm$ python -m inference_swarm --slurm_template_path templates
+(.venv) costa@login-node-1:/fsx/costa/inference-swarm$ python -m llm_swarm --slurm_template_path templates
 /vllm_h100.template.slurm --inference_engine=vllm
 None of PyTorch, TensorFlow >= 2.0, or Flax have been found. Models won't be available and only tokenizers, configuration and file/data utilities can be used.
 running sbatch --parsable slurm/vllm_1705590449_vllm.slurm
@@ -278,7 +278,7 @@ Endpoints running properly: ['http://26.0.161.138:11977']
 Press Enter to EXIT...
 ```
 
-You can use the endpoints to test the inference engine. For example, you can pass in `--debug_endpoint=http://26.0.161.138:11977` to tell `inference_swarm` not to spin up instances and use the endpoint directly.
+You can use the endpoints to test the inference engine. For example, you can pass in `--debug_endpoint=http://26.0.161.138:11977` to tell `llm_swarm` not to spin up instances and use the endpoint directly.
 
 ```bash
 python examples/benchmark.py --debug_endpoint=http://26.0.161.138:11977 --inference_engine=vllm

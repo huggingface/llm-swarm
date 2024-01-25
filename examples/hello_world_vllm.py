@@ -1,22 +1,22 @@
 import asyncio
 import json
 import pandas as pd
-from inference_swarm import InferenceSwarm, InferenceSwarmConfig
+from llm_swarm import LLMSwarm, LLMSwarmConfig
 from huggingface_hub import AsyncInferenceClient
 from transformers import AutoTokenizer
 from tqdm.asyncio import tqdm_asyncio
 
 
 tasks = ["What is the capital of France?", "Who wrote Romeo and Juliet?", "What is the formula for water?"]
-with InferenceSwarm(
-    InferenceSwarmConfig(
+with LLMSwarm(
+    LLMSwarmConfig(
         instances=2,
         inference_engine="vllm",
         slurm_template_path="templates/vllm_h100.template.slurm",
         load_balancer_template_path="templates/nginx.template.conf",
     )
-) as inference_swarm:
-    client = AsyncInferenceClient(model=inference_swarm.endpoint)
+) as llm_swarm:
+    client = AsyncInferenceClient(model=llm_swarm.endpoint)
     tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-Instruct-v0.1")
     tokenizer.add_special_tokens({"sep_token": "", "cls_token": "", "mask_token": "", "pad_token": "[PAD]"})
 
