@@ -175,8 +175,11 @@ class LLMSwarm:
             self.endpoint = self.config.debug_endpoint
             if self.config.inference_engine == "vllm":
                 self.endpoint = f"{self.config.debug_endpoint}/generate"
+            if self.config.debug_endpoint.startswith("https://api-inference.huggingface.co/"):
+                self.suggested_max_parallel_requests = 40
             return
 
+        self.suggested_max_parallel_requests = 500 * self.config.instances # some experience values
         with open(self.config.slurm_template_path) as f:
             slurm_template = f.read()
 
