@@ -49,8 +49,8 @@ with open(args.constitution_path) as f:
     data = json.load(f)
     constitutions = data["constitutions"]
 rate_limit = 500 * isc.instances
-semaphore = asyncio.Semaphore(rate_limit)
 with LLMSwarm(isc) as llm_swarm:
+    semaphore = asyncio.Semaphore(llm_swarm.suggested_max_parallel_requests)
     client = AsyncInferenceClient(model=llm_swarm.endpoint)
     STOP_SEQ = ["User:", "###", "<|endoftext|>"]
 
