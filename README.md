@@ -1,6 +1,6 @@
-# inference-swarm
+# llm-swarm
 
-This repo is intended for generating massive texts leverage [huggingface/text-generation-inference](https://github.com/huggingface/text-generation-inference)
+This repo is intended for generating massive text leverage [huggingface/text-generation-inference](https://github.com/huggingface/text-generation-inference) and [vLLM](https://github.com/vllm-project/vllm)
 
 Prerequisites:
 * A slurm cluster
