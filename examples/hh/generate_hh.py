@@ -99,7 +99,9 @@ with LLMSwarm(isc) as llm_swarm:
     async def main():
         start_time = time.time()
         tasks = [process_text(split, idx, row["prompt"]) for split in ds for idx, row in enumerate(ds[split])]
-        print(f"WARNING: the first generation can hang like this for up to 1 hour because it will finish the first two turns of conversation of the entire dataset")
+        print(
+            "WARNING: the first generation can hang like this for up to 1 hour because it will finish the first two turns of conversation of the entire dataset"
+        )
         results = await tqdm_asyncio.gather(*tasks)
         end_time = time.time()
 
