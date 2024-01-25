@@ -115,7 +115,7 @@ It does a couple of things:
 If you don't have a slurm cluster or just want to try out `llm_swarm`, you can do so with our hosted inference endpoints such as https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1. These endpoints come with usage limits though. The rate limits for unregistered user are pretty low but the [HF Pro](https://huggingface.co/pricing#pro) users have much higher rate limits. 
 
 
-<img src="static/HF-Get a Pro Account-blue.svg">
+<a href="https://huggingface.co/pricing#pro"><img src="static/HF-Get a Pro Account-blue.svg"></a>
 
 In that case you can use the following settings:
 
