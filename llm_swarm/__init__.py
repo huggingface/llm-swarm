@@ -13,6 +13,7 @@ from time import sleep
 import socket
 
 DataclassT = TypeVar("DataclassT")
+SLURM_LOGS_FOLDER = "slurm/logs"
 
 
 @dataclass
@@ -126,7 +127,7 @@ class Loader:
             print(f"\r{self.failed}", flush=True)
 
 
-def get_endpoints(endpoint_path: str, instances: int = 1) -> List[str]:
+def get_endpoints(endpoint_path: str, instances: int = 1, job_ids: Optional[List[str]] = None) -> List[str]:
     """Return list of endpoints from either a file or a comma separated string.
     It also checks if the endpoints are reachable.
 
@@ -159,6 +160,13 @@ def get_endpoints(endpoint_path: str, instances: int = 1) -> List[str]:
                     print(f"\nConnected to {endpoint}")
                     connected = True
                 except requests.exceptions.ConnectionError:
+                    # make sure the job ids are still running, otherwise error out
+                    if job_ids:
+                        for job_id in job_ids:
+                            if not is_job_running(job_id):
+                                slumr_log_path = os.path.join(SLURM_LOGS_FOLDER, f"llm-swarm_{job_id}.out")
+                                print(f"\n❌ Failed! Job {job_id} is not running; checkout {slumr_log_path} ")
+                                raise
                     sleep(1)
     return endpoints
 
@@ -167,7 +175,7 @@ class LLMSwarm:
     def __init__(self, config: LLMSwarmConfig) -> None:
         self.config = config
         self.cleaned_up = False
-        os.makedirs("slurm/logs", exist_ok=True)
+        os.makedirs(SLURM_LOGS_FOLDER, exist_ok=True)
 
     def start(self):
         # if debug endpoint is provided, use it as is
@@ -179,7 +187,7 @@ class LLMSwarm:
                 self.suggested_max_parallel_requests = 40
             return
 
-        self.suggested_max_parallel_requests = 500 * self.config.instances # some experience values
+        self.suggested_max_parallel_requests = 500 * self.config.instances  # some experience values
         with open(self.config.slurm_template_path) as f:
             slurm_template = f.read()
 
@@ -197,7 +205,7 @@ class LLMSwarm:
         # start inference instances
         self.job_ids = [run_command(f"sbatch --parsable {slurm_path}") for _ in range(self.config.instances)]
         print(f"Slurm Job ID: {self.job_ids}")
-        print(f"📖 Slurm Hosts Path: {slurm_host_path}")
+        print(f"📖 Slurm hosts path: {slurm_host_path}")
 
         self.container_id = None
         try:
@@ -206,8 +214,10 @@ class LLMSwarm:
                 with Loader(f"Waiting for {job_id} to be created"):
                     while not is_job_running(job_id):
                         sleep(1)
+                slumr_log_path = os.path.join(SLURM_LOGS_FOLDER, f"llm-swarm_{job_id}.out")
+                print(f"📖 Slurm log path: {slumr_log_path}")
             # retrieve endpoints
-            self.endpoints = get_endpoints(slurm_host_path, self.config.instances)
+            self.endpoints = get_endpoints(slurm_host_path, self.config.instances, self.job_ids)
             print(f"Endpoints running properly: {self.endpoints}")
             # warm up endpoints
             for endpoint in self.endpoints:

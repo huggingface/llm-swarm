@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=inference-swarm
+#SBATCH --job-name=llm-swarm
 #SBATCH --partition hopper-prod
 #SBATCH --gpus=8
 #SBATCH --cpus-per-task=12
