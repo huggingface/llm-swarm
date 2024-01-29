@@ -67,7 +67,7 @@ with LLMSwarm(
     asyncio.run(main())
 ```
 ```
-(.venv) costa@login-node-1:/fsx/costa/tgi-swarm$ python examples/hello_world.py
+(.venv) costa@login-node-1:/fsx/costa/llm-swarm$ python examples/hello_world.py
 None of PyTorch, TensorFlow >= 2.0, or Flax have been found. Models won't be available and only tokenizers, configuration and file/data utilities can be used.
 running sbatch --parsable slurm/tgi_1705591874_tgi.slurm
 running sbatch --parsable slurm/tgi_1705591874_tgi.slurm
@@ -109,6 +109,34 @@ It does a couple of things:
 
 `llm_swarm` will create a slurm file in `./slurm` based on the default configuration (` --slurm_template_path=tgi_template.slurm`) and logs in `./slurm/logs` if you are interested to inspect.
 
+
+## Wait I don't have a slurm cluster
+
+If you don't have a slurm cluster or just want to try out `llm_swarm`, you can do so with our hosted inference endpoints such as https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1. These endpoints come with usage limits though. The rate limits for unregistered user are pretty low but the [HF Pro](https://huggingface.co/pricing#pro) users have much higher rate limits. 
+
+
+<a href="https://huggingface.co/pricing#pro"><img src="static/HF-Get a Pro Account-blue.svg"></a>
+
+In that case you can use the following settings:
+
+
+```python
+client = AsyncInferenceClient(model="https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1")
+```
+
+or 
+
+```python
+with LLMSwarm(
+    LLMSwarmConfig(
+        debug_endpoint="https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1"
+    )
+) as llm_swarm:
+    semaphore = asyncio.Semaphore(llm_swarm.suggested_max_parallel_requests)
+    client = AsyncInferenceClient(model=llm_swarm.endpoint)
+```
+
+
 #### Pyxis and Enroot 
 
 Note that we our slurm templates use Pyxis and Enroot for deploying Docker containers, but you are free to customize your own slurm templates in the `templates` folder.
@@ -132,7 +160,7 @@ Below are some simple benchmark results. Note that the benchmark can be affected
 <details>
   <summary>TGI benchmark results</summary>
     
-    (.venv) costa@login-node-1:/fsx/costa/tgi-swarm$ python examples/benchmark.py --instances=2
+    (.venv) costa@login-node-1:/fsx/costa/llm-swarm$ python examples/benchmark.py --instances=2
     None of PyTorch, TensorFlow >= 2.0, or Flax have been found. Models won't be available and only tokenizers, configuration and file/data utilities can be used.
     running sbatch --parsable slurm/tgi_1705616928_tgi.slurm
     running sbatch --parsable slurm/tgi_1705616928_tgi.slurm
@@ -189,7 +217,7 @@ Below are some simple benchmark results. Note that the benchmark can be affected
 <details>
   <summary>vllm benchmark results</summary>
 
-    (.venv) costa@login-node-1:/fsx/costa/tgi-swarm$ python examples/benchmark.py --instances=2 --slurm_template_path templates/vllm_h100.template.slurm --inference_engine=vllm
+    (.venv) costa@login-node-1:/fsx/costa/llm-swarm$ python examples/benchmark.py --instances=2 --slurm_template_path templates/vllm_h100.template.slurm --inference_engine=vllm
     None of PyTorch, TensorFlow >= 2.0, or Flax have been found. Models won't be available and only tokenizers, configuration and file/data utilities can be used.
     running sbatch --parsable slurm/vllm_1705617044_vllm.slurm
     running sbatch --parsable slurm/vllm_1705617044_vllm.slurm
@@ -260,7 +288,7 @@ python -m llm_swarm --instances=1 --slurm_template_path templates/vllm_h100.temp
 Running commands above will give you outputs like below. 
 
 ```
-(.venv) costa@login-node-1:/fsx/costa/inference-swarm$ python -m llm_swarm --slurm_template_path templates
+(.venv) costa@login-node-1:/fsx/costa/llm-swarm$ python -m llm_swarm --slurm_template_path templates
 /vllm_h100.template.slurm --inference_engine=vllm
 None of PyTorch, TensorFlow >= 2.0, or Flax have been found. Models won't be available and only tokenizers, configuration and file/data utilities can be used.
 running sbatch --parsable slurm/vllm_1705590449_vllm.slurm

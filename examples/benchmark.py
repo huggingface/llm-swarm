@@ -25,11 +25,9 @@ def extract(example):
 
 
 tasks = tasks.map(extract)["prompt"]
-rate_limit = 500 * isc.instances
-semaphore = asyncio.Semaphore(rate_limit)
 with LLMSwarm(isc) as llm_swarm:
+    semaphore = asyncio.Semaphore(llm_swarm.suggested_max_parallel_requests)
     client = AsyncInferenceClient(model=llm_swarm.endpoint)
-
     async def process_text(task):
         async with semaphore:
             prompt = rf"<s>[INST] {task} [\INST]"

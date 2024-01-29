@@ -62,8 +62,8 @@ def extract(example):
 ds = ds.map(extract)
 ds.remove_columns(["chosen", "rejected"])
 rate_limit = 500 * isc.instances
-semaphore = asyncio.Semaphore(rate_limit)
 with LLMSwarm(isc) as llm_swarm:
+    semaphore = asyncio.Semaphore(llm_swarm.suggested_max_parallel_requests)
     client = AsyncInferenceClient(model=llm_swarm.endpoint)
     STOP_SEQ = ["User:", "###", "<|endoftext|>"]
 
