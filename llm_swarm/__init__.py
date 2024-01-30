@@ -45,11 +45,20 @@ def run_command(command: str):
     return output.decode("utf-8").strip()
 
 
-def is_job_running(job_id):
+def is_job_running(job_id: str):
     """Given job id, check if the job is in eunning state (needed to retrieve hostname from logs)"""
     command = "squeue --me --states=R | awk '{print $1}' | tail -n +2"
     my_running_jobs = subprocess.run(command, shell=True, text=True, capture_output=True).stdout.splitlines()
     return job_id in my_running_jobs
+
+
+def make_sure_jobs_are_still_running(job_ids: List[str]):
+    if job_ids:
+        for job_id in job_ids:
+            if not is_job_running(job_id):
+                slumr_log_path = os.path.join(SLURM_LOGS_FOLDER, f"llm-swarm_{job_id}.out")
+                print(f"\n❌ Failed! Job {job_id} is not running; checkout {slumr_log_path} ")
+                raise
 
 
 def get_unused_port():
@@ -149,6 +158,7 @@ def get_endpoints(endpoint_path: str, instances: int = 1, job_ids: Optional[List
                 # due to race condition (slurm writing & us reading)
                 trying = False
             except (OSError, AssertionError):
+                make_sure_jobs_are_still_running(job_ids)
                 sleep(1)
     print("obtained endpoints", endpoints)
     for endpoint in endpoints:
@@ -160,13 +170,7 @@ def get_endpoints(endpoint_path: str, instances: int = 1, job_ids: Optional[List
                     print(f"\nConnected to {endpoint}")
                     connected = True
                 except requests.exceptions.ConnectionError:
-                    # make sure the job ids are still running, otherwise error out
-                    if job_ids:
-                        for job_id in job_ids:
-                            if not is_job_running(job_id):
-                                slumr_log_path = os.path.join(SLURM_LOGS_FOLDER, f"llm-swarm_{job_id}.out")
-                                print(f"\n❌ Failed! Job {job_id} is not running; checkout {slumr_log_path} ")
-                                raise
+                    make_sure_jobs_are_still_running(job_ids)
                     sleep(1)
     return endpoints
 
