@@ -10,17 +10,16 @@ Prerequisites:
 ## Install and prepare
 
 ```bash
-pip install -e .
+pip install llm_swarm
+# or pip install -e .
 # or pip install -r ./examples/hh/requirements.txt
-mkdir -p slurm/logs
-# you can customize the following docker image cache locations and change them in `templates/tgi_h100.template.slurm` and `templates/vllm_h100.template.slurm`
 mkdir -p .cache/
+# you can customize the above docker image cache locations and change them in `templates/tgi_h100.template.slurm` and `templates/vllm_h100.template.slurm`
 ```
 
 ## Hello world
 
 ```bash
-export HF_TOKEN=<YOUR_HF_TOKEN>
 python examples/hello_world.py
 python examples/hello_world_vllm.py
 ```
@@ -66,6 +65,10 @@ with LLMSwarm(
         print(df)
     asyncio.run(main())
 ```
+* [templates/tgi_h100.template.slurm](templates/tgi_h100.template.slurm) is the slurm template for TGI
+* [templates/nginx.template.conf](templates/nginx.template.conf) is the nginx template for load balancing
+
+
 ```
 (.venv) costa@login-node-1:/fsx/costa/llm-swarm$ python examples/hello_world.py
 None of PyTorch, TensorFlow >= 2.0, or Flax have been found. Models won't be available and only tokenizers, configuration and file/data utilities can be used.
