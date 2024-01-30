@@ -10,8 +10,8 @@ Prerequisites:
 ## Install and prepare
 
 ```bash
-pip install llm_swarm
-# or pip install -e .
+pip install -e .
+# or pip install llm_swarm
 mkdir -p .cache/
 # you can customize the above docker image cache locations and change them in `templates/tgi_h100.template.slurm` and `templates/vllm_h100.template.slurm`
 ```
