@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=inference-swarm
+#SBATCH --job-name=llm-swarm
 #SBATCH --partition hopper-prod
 #SBATCH --gpus=8
 #SBATCH --cpus-per-task=12
@@ -26,13 +26,10 @@ function unused_port() {
         head -n "$N"
 }
 export PORT=$(unused_port)
-export HUGGING_FACE_HUB_TOKEN=$HF_TOKEN
-
 if [ -z "$HUGGING_FACE_HUB_TOKEN" ]; then
-  echo "You should provide a Hugging Face token in HUGGING_FACE_HUB_TOKEN."
-  exit 1
+    # try reading from file
+    export HUGGING_FACE_HUB_TOKEN=$(cat ~/.cache/huggingface/token)
 fi
-
 echo "Starting TGI container port $PORT"
 echo "http://$(hostname -I | awk '{print $1}'):$PORT" >> {{slurm_hosts_path}}
 sudo docker run \
