@@ -1,22 +1,19 @@
+# Constitutional AI
 
-Generate some system chats.
-```
-python examples/hh/generate_system_chat.py --debug_endpoint="https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1"
-python examples/hh/generate_system_chat.py --constitution_path="examples/hh/grok_constituion.json" --debug_endpoint="https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1"
-```
-```
+This folder has some scripts used for generating Constitutional AI datasets based on anthropic's HH prompts. These pre-generated datasets are as follows:
 
-Inspect the generated chats and make some modification
+- 📖 Constitutional AI dataset https://huggingface.co/datasets/HuggingFaceH4/cai-conversation-harmless
+- 📖 Grok-style CAI dataset https://huggingface.co/datasets/HuggingFaceH4/grok-conversation-harmless
 
+You can generate your own! Run the cai dataset generation script to debug
 
-Run the cai dataset generation script to debug
 ```
 python examples/hh/generate_hh.py --push_to_hub
+# use a different constitution
 python examples/hh/generate_hh.py --push_to_hub --constitution_path="examples/hh/grok_constituion.json"
 ```
 
-
-generate the whole dataset
+Then to generate the whole dataset (it takes a while: runs for 1h 37min when using 64 GPUs):
 ```
 python examples/hh/generate_hh.py --push_to_hub --max_samples=-1 --instances=8
 python examples/hh/generate_hh.py --constitution_path="examples/hh/grok_constituion.json" --push_to_hub --max_samples=-1 --instances=10
@@ -83,11 +80,23 @@ WARNING: the first generation might hang a bit because of the multi-turn chat an
  63%|███████████████████████████████████████████▊                          | 28054/44849 [1:24:25<12:58, 21.58it/s]
  ```
 
-It finished after 1h37min. Note the tokens per second seems slow but it is because of the multi-turn chat and long context.
-
+after a while the output is as follow. Note the tokens per second seems slow but it is because of the multi-turn chat and long context.
 
 ```
 100%|██████████████████████████████████████████████████████████████████████| 44849/44849 [1:37:06<00:00,  7.70it/s]
 Overall Tokens per Second: 2471.9039087752
 ```
 
+
+
+## Advanced: generate system chats
+
+Sometimes, if you have different models, you may need to re-generate system chats again. You can do it with the following command:
+
+```
+python examples/hh/generate_system_chat.py --debug_endpoint="https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1"
+python examples/hh/generate_system_chat.py --constitution_path="examples/hh/grok_constituion.json" --debug_endpoint="https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1"
+```
+```
+
+Inspect the generated chats in the `examples/hh/exps` folder and make modifications if needed.

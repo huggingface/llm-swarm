@@ -321,14 +321,7 @@ When you are done, you can press `Enter` to stop the instances.
 
 
 
-## Generating data for the entire harmless dataset
-
-```
-python examples/hh/generate_hh.py --instances 8 --m anage_tgi_instances --max_samples=-1
-python merge_data.py --output_folder=output/hh
-```
-
-# Installing TGI from scratch
+# Installing TGI from scratch (Dev notes)
 
 ```
 conda install pytorch pytorch-cuda=11.8 -c pytorch -c nvidia
