@@ -23,7 +23,7 @@ class Args:
     """Max new tokens"""
     temperature: float = 1.0
     """Generation temperature"""
-    constitution_path: str = "examples/hh/constitution.json"
+    constitution_path: str = "examples/constitutional-ai/constitution_anthropic.json"
     """Path to the constitution"""
     repo_id: str = "cai-conversation-dev"
     """The repo id to push to"""
