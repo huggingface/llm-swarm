@@ -1,17 +1,17 @@
 <div align="center">
   <h1>🐝 llm-swarm</h1>
-  <p><em>A massively parallel framework to generate synthetic data from open LLMs</em></p>
+  <p><em>Manage scalable open LLM inference endpoints in Slurm clusters</em></p>
 </div>
 
 ## Features
 
-- Generate synthetic datasets for pretraining or fine-tuning using either local LLMs or Inference Endpoints on the Hugging Face Hub.
+- Generate synthetic datasets for pretraining or fine-tuning using either local LLMs or [Inference Endpoints](https://huggingface.co/inference-endpoints/dedicated) on the Hugging Face Hub.
 - Integrations with [huggingface/text-generation-inference](https://github.com/huggingface/text-generation-inference) and [vLLM](https://github.com/vllm-project/vllm) to generate text at scale.
 
 ## Prerequisites
 
-* A Slurm cluster
-* Docker
+* A Slurm cluster with Docker support,
+* or access to [Inference Endpoints](https://huggingface.co/inference-endpoints/dedicated)
 
 
 ## Install and prepare
