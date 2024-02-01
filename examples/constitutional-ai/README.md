@@ -8,18 +8,18 @@ This folder has some scripts used for generating Constitutional AI datasets base
 You can generate your own! Run the cai dataset generation script to debug
 
 ```
-python examples/hh/generate_hh.py --push_to_hub
+python examples/constitutional-ai/generate_dataset.py --push_to_hub
 # use a different constitution
-python examples/hh/generate_hh.py --push_to_hub --constitution_path="examples/hh/grok_constituion.json"
+python examples/constitutional-ai/generate_dataset.py --push_to_hub --constitution_path="examples/constitutional-ai/constituion_grok.json"
 ```
 
 Then to generate the whole dataset (it takes a while: runs for 1h 37min when using 64 GPUs):
 ```
-python examples/hh/generate_hh.py --push_to_hub --max_samples=-1 --instances=8
-python examples/hh/generate_hh.py --constitution_path="examples/hh/grok_constituion.json" --push_to_hub --max_samples=-1 --instances=10
+python examples/constitutional-ai/generate_dataset.py --push_to_hub --max_samples=-1 --instances=8
+python examples/constitutional-ai/generate_dataset.py --constitution_path="examples/constitutional-ai/constituion_grok.json" --push_to_hub --max_samples=-1 --instances=10
 ```
 ```
-(.venv) costa@login-node-1:/fsx/costa/tgi-swarm$ python examples/hh/generate_hh.py --push_to_hub --max_samples=-1 --instances=6
+(.venv) costa@login-node-1:/fsx/costa/tgi-swarm$ python examples/constitutional-ai/generate_dataset.py --push_to_hub --max_samples=-1 --instances=6
 None of PyTorch, TensorFlow >= 2.0, or Flax have been found. Models won't be available and only tokenizers, configuration and file/data utilities can be used.
 Map: 100%|█████████████████████████████████████████████████████████| 42537/42537 [00:01<00:00, 32074.71 examples/s]
 Map: 100%|███████████████████████████████████████████████████████████| 2312/2312 [00:00<00:00, 26755.85 examples/s]
@@ -94,9 +94,9 @@ Overall Tokens per Second: 2471.9039087752
 Sometimes, if you have different models, you may need to re-generate system chats again. You can do it with the following command:
 
 ```
-python examples/hh/generate_system_chat.py --debug_endpoint="https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1"
-python examples/hh/generate_system_chat.py --constitution_path="examples/hh/grok_constituion.json" --debug_endpoint="https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1"
+python examples/constitutional-ai/generate_system_chat.py --debug_endpoint="https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1"
+python examples/constitutional-ai/generate_system_chat.py --constitution_path="examples/constitutional-ai/constituion_grok.json" --debug_endpoint="https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1"
 ```
 ```
 
-Inspect the generated chats in the `examples/hh/exps` folder and make modifications if needed.
+Inspect the generated chats in the `examples/constitutional-ai/exps` folder and make modifications if needed.
