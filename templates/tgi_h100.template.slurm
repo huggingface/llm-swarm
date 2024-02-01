@@ -39,13 +39,13 @@ srun --container-image='ghcr.io#huggingface/text-generation-inference' \
     --container-env=HUGGING_FACE_HUB_TOKEN,PORT \
     --container-mounts="$volume:/data" \
     --no-container-mount-home \
-    --qos normal \
+    --qos high \
     /usr/local/bin/text-generation-launcher \
     --model-id $model \
     --revision $revision \
     --max-concurrent-requests 2000 \
     --max-total-tokens 8192 \
-    --max-input-length 7144 \
-    --max-batch-prefill-tokens 8192 \
+    --max-input-length 2048 \
+    --max-batch-prefill-tokens 7168 \
 
 echo "End of job"
