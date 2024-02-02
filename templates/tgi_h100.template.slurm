@@ -45,7 +45,7 @@ srun --container-image='ghcr.io#huggingface/text-generation-inference' \
     --revision $revision \
     --max-concurrent-requests 2000 \
     --max-total-tokens 8192 \
-    --max-input-length 2048 \
+    --max-input-length 7144 \
     --max-batch-prefill-tokens 8192 \
 
 echo "End of job"
