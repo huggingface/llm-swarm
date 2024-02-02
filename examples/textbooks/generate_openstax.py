@@ -17,9 +17,9 @@ HF_TOKEN = os.environ.get("HF_TOKEN", None)
 class Args:
     max_samples: int = 50000
     """The maximum umber of samples to generate (use -1 for all))"""
-    instances: int = 5
+    tgi_instances: int = 5
     """Number of TGI instances to use"""
-    model: str = "mistralai/Mixtral-8x7B-Instruct-v0.1"
+    model_name: str = "mistralai/Mixtral-8x7B-Instruct-v0.1"
     """Model to prompt"""
     max_new_tokens: int = 2100
     """Max new tokens"""
@@ -44,9 +44,9 @@ args, isc = parser.parse_args_into_dataclasses()
 print(args)
 
 # overwrite model and number of instances
-isc.model = args.model
-isc.instances = args.instances
-tokenizer = AutoTokenizer.from_pretrained(args.model)
+isc.model = args.model_name
+isc.instances = args.tgi_instances
+tokenizer = AutoTokenizer.from_pretrained(args.model_name)
 
 ds = load_dataset(
     "HuggingFaceTB/openstax_prompts_concatenated", token=HF_TOKEN, split="train"
@@ -90,7 +90,7 @@ with LLMSwarm(isc) as llm_swarm:
                     sample["token_length"] = token_length
                     return sample
 
-            except Exception as e:  # Replace with specific exceptions if known
+            except Exception as e: 
                 attempt += 1
                 if attempt < MAX_RETRIES:
                     print(
