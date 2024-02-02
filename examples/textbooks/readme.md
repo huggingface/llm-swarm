@@ -70,3 +70,4 @@ running scancel 1625163
 running scancel 1625164
 running scancel 1625165
 ```
+Note: the `generate_rw_textbooks.py` requires installing  `requirements.txt` and  `datatrove` from source.
