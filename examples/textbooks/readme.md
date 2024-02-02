@@ -1,5 +1,6 @@
-# Installation
+# Guidelines
 
-Install inference-swarm and the requirements in the example.
 
-Install `datatrove` from source
+```
+python ./examples/textbooks/generate_openstax.py --tgi_instances 2 --max_samples 10000
+```
