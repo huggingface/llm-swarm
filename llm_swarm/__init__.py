@@ -32,6 +32,8 @@ class LLMSwarmConfig:
     """number of gpus per instance"""
     load_balancer_template_path: str = "templates/nginx.template.conf"
     """path to load balancer template"""
+    per_instance_max_connection: int = 500
+    """maximum number of parallel requests per instance"""
     debug_endpoint: Optional[str] = None
     """endpoint to use for debugging (e.g. http://localhost:13120)"""
 
@@ -189,9 +191,11 @@ class LLMSwarm:
                 self.endpoint = f"{self.config.debug_endpoint}/generate"
             if self.config.debug_endpoint.startswith("https://api-inference.huggingface.co/"):
                 self.suggested_max_parallel_requests = 40
+            else:
+                self.suggested_max_parallel_requests = self.config.per_instance_max_connection
             return
 
-        self.suggested_max_parallel_requests = 500 * self.config.instances  # some experience values
+        self.suggested_max_parallel_requests = self.config.per_instance_max_connection * self.config.instances
         with open(self.config.slurm_template_path) as f:
             slurm_template = f.read()
 
