@@ -328,6 +328,23 @@ When you are done, you can press `Enter` to stop the instances.
 
 
 
+## What if I hit errors mid-generation?
+
+If you hit errors mid-generation, you can inspect the logs in `./slurm/logs` and the slurm files in `./slurm` to debug. Sometimes it is possible you are overloading the servers, so there are two approaches to address it:
+
+1) Set a lower maximum parallel requests. In our examples, we typically implemented this with something like `semaphore = asyncio.Semaphore(max_requests)`. This is a simple way to limit the number of parallel requests. We typically provide a suggested value
+
+```python
+# under the hood
+# llm_swarm.suggested_max_parallel_requests = 
+
+with LLMSwarm(isc) as llm_swarm:
+    semaphore = asyncio.Semaphore(llm_swarm.suggested_max_parallel_requests)
+```
+
+You can set `--per_instance_max_parallel_requests` to a lower number to limit the number of parallel requests initia
+
+
 # Installing TGI from scratch (Dev notes)
 
 ```
