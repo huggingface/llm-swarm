@@ -13,4 +13,4 @@ poetry run python \
     --max_samples_per_source_category=-1 \
     --temperature=1.0 \
     --do_sample \
-    --debug_endpoint=http://26.0.160.100:15141
+    --debug_endpoint=http://26.0.160.100:15141 > output.txt 2> error.txt
