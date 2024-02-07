@@ -19,14 +19,11 @@ HF_TOKEN = os.environ.get("HF_TOKEN", None)
 
 @dataclass
 class Args:
-    max_samples: int = 5000
-    """The maximum umber of samples to generate (use -1 for all))"""
+    # gneration parameters
     tgi_instances: int = 10
     """Number of TGI instances to use"""
     model_name: str = "mistralai/Mixtral-8x7B-Instruct-v0.1"
     """Dataset containing the prompts"""
-    prompts_dataset: str = "HuggingFaceTB/fw_prompts_data_textbook"
-    """Model to prompt"""
     max_new_tokens: int = 2500
     """Max new tokens"""
     temperature: float = 0.6
@@ -37,12 +34,22 @@ class Args:
     """Generation top_k"""
     repetition_penalty: float = 1.2 
     """Generation repetition_penalty"""
+    # prompts dataset parameters
+    prompts_dataset: str = "HuggingFaceTB/fw_prompts_data_textbook"
+    """Model to prompt"""
+    max_samples: int = 5000
+    """The maximum umber of samples to generate (use -1 for all))"""
+    start_sample: int = -1
+    """First sample to process"""
+    end_sample: int = -1
+    """Last sample to process"""
     num_proc: int = 36
     """Number of processes for loading the dataset"""
     prompt_column: str = "prompt_blogpost"
     """Name of the column containing the prompt (from 'prompt_wikihow', 'prompt_textbook_narrative', 'prompt_textbook_academic', 'prompt_blogpost'"""
     shuffle_dataset: bool = False
     """Whether to shuffle the prompts"""
+    # logging parameters
     repo_id: str = "HuggingFaceTB/fw_generations_test"
     """The repo id to push to"""
     checkpoint_path: str = "./fw_data"
@@ -53,10 +60,7 @@ class Args:
     """Wandb username"""
     push_to_hub: bool = True
     """Whether to push to hub"""
-    start_sample: int = -1
-    """First sample to process"""
-    end_sample: int = -1
-    """Last sample to process"""
+
 
 
 parser = HfArgumentParser((Args, LLMSwarmConfig))
