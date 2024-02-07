@@ -72,7 +72,7 @@ running scancel 1625165
 ```
 
 ## FineWeb generations
-Here we want to generate a large amount of prompts from web datasets. Since the generations take a long time, we save intermediate generations in `checkpoint_path` and track the progress and throughput with `wandb`
+Here we want to generate a large amount of textbooks from web datasets. Since the generations take a long time, we save intermediate generations in `checkpoint_path` and track the progress and throughput with `wandb`.
 ```bash
 pip install wandb
 wandb init
