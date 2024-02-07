@@ -80,6 +80,7 @@ python /fsx/loubna/projects/llm-swarm/examples/textbooks/generate_fineweb_checkp
     --end_sample 1_000_000 \
     --repo_id "HuggingFaceTB/fw_generations_textbook_first_1M"
 ```
+This example uses checkpointing to save intermediate generations.
 
 ## Other
 Note: the `generate_rw_textbooks.py` requires installing  `requirements.txt` and  `datatrove` from source.
