@@ -3,6 +3,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 import json
 import multiprocessing
+import os
 import pandas as pd
 from llm_swarm import LLMSwarm, LLMSwarmConfig
 from huggingface_hub import AsyncInferenceClient
@@ -13,7 +14,7 @@ import time
 from huggingface_hub import HfApi
 api = HfApi()
 
-CHUNK_SIZE = 20000  # Define your chunk size here
+CHUNK_SIZE = 50000  # Define your chunk size here
 
 @dataclass
 class Args:
@@ -37,6 +38,8 @@ class Args:
     """Debug mode"""
     max_samples_per_source_category: int = 2
     """The maximum number of samples per source"""
+    restart_chunk_index: int = 0
+    """The index of the chunk to restart from"""
 
 parser = HfArgumentParser([Args, LLMSwarmConfig])
 args, isc = parser.parse_args_into_dataclasses()
@@ -67,7 +70,7 @@ def extract(row):
         conversations[1]["value"] = conversations[0]["value"] + " " + conversations[1]["value"]
         conversations = conversations[1:] # merge the first two
     sample["prompt"] = conversations[0]["value"]
-    sample["chosen_policy"] = conversations[0]["from"]
+    sample["chosen_policy"] = conversations[1]["from"]
     sample["chosen"] = []
     for i, conv in enumerate(conversations):
         if i % 2 == 0:
@@ -84,44 +87,72 @@ print("mean token length", ds.to_pandas()["token_length"].mean())
 print("median token length", ds.to_pandas()["token_length"].median())
 # ds = ds.filter(lambda x: x["token_length"] < args.max_token_length, load_from_cache_file=False, num_proc=1 if args.debug else multiprocessing.cpu_count())
 with LLMSwarm(isc) as llm_swarm:
-    semaphore = asyncio.Semaphore(500)
+    semaphore = asyncio.Semaphore(llm_swarm.suggested_max_parallel_requests)
+    print(f"{llm_swarm.suggested_max_parallel_requests=}")
     client = AsyncInferenceClient(model=llm_swarm.endpoint)
+    MAX_RETRIES = 3  # maximum number of retries
+    RETRY_DELAY = 5  # delay in seconds between retries
 
     async def process_text(row):
-        async with semaphore:
-            prompt = tokenizer.apply_chat_template(row["chosen"][:-1], tokenize=False)
-            completion = None
-            while completion is None:
-                try:
+        attempt = 0
+        prompt = tokenizer.apply_chat_template(row["chosen"][:-1], tokenize=False)
+        while attempt < MAX_RETRIES:
+            try:
+                async with semaphore:
                     completion = await client.text_generation(
                         prompt=prompt,
                         max_new_tokens=args.max_new_tokens,
                         temperature=args.temperature,
                         do_sample=args.do_sample,
                     )
-                except Exception as e:
-                    print(f"error in: {e}; retrying in 2 seconds")
-                    time.sleep(2)
-                    continue
-            row["rejected"] = row["chosen"][:-1] + [{"role": "assistant", "content": completion}]
-            row["rejected_policy"] = ":".join([isc.model, isc.revision])
-            return row
+                    row["rejected"] = row["chosen"][:-1] + [{"role": "assistant", "content": completion}]
+                    row["rejected_policy"] = ":".join([isc.model, isc.revision])
+                    return row
+            except Exception as e: 
+                attempt += 1
+                if attempt < MAX_RETRIES:
+                    print(
+                        f"Request failed, retrying in {RETRY_DELAY} seconds... (Attempt {attempt}/{MAX_RETRIES})"
+                    )
+                    await asyncio.sleep(RETRY_DELAY)
+                else:
+                    print(
+                        f"Max retries reached. Failed to process the request with error {str(e)}."
+                    )
+                    row["rejected"] = ""
+                    row["rejected_policy"] = ""
+                    return row
 
     async def main():
-        # results = await tqdm_asyncio.gather(*[process_text(row) for row in ds])
+        os.makedirs("chunks_cache", exist_ok=True)
         results = []
         num_chunks = len(ds) // CHUNK_SIZE
-        for i in range(0, len(ds), CHUNK_SIZE):
-            print(f"Processing chunk {i // CHUNK_SIZE + 1}/{num_chunks}")
+        restart_idx = 0
+        if args.restart_chunk_index > 0:
+            post_ds = Dataset.load_from_disk(f"chunks_cache/cache_chunk{args.restart_chunk_index}.arrow")
+            results = post_ds.to_list()
+            restart_idx = (args.restart_chunk_index + 1) * CHUNK_SIZE
+
+        for i in range(restart_idx, len(ds), CHUNK_SIZE):
+            chunk_idx = i // CHUNK_SIZE + 1
+            print(f"Processing chunk {chunk_idx}/{num_chunks}")
+            start_time = time.time()
             chunk = ds.select(range(i, min(i + CHUNK_SIZE, len(ds))))
             chunk_results = await tqdm_asyncio.gather(*[process_text(row) for row in chunk])
             results.extend(chunk_results)
+            print(f"Chunk {chunk_idx}/{num_chunks} took {time.time() - start_time} seconds")
+            post_ds = Dataset.from_list(results)
+            post_ds.save_to_disk(f"chunks_cache/cache_chunk{chunk_idx}.arrow")
+            # if chunk_idx > 0:
+            #     os.remove(f"chunks_cache/cache_chunk{chunk_idx - 1}.arrow")
+
         post_ds = Dataset.from_list(results)
+        post_ds = post_ds.filter(lambda x: x["rejected"] != "") # remove empty completions
+        print(post_ds)
         if args.push_to_hub:
             test_split_samples = int(len(post_ds) * args.test_split_percentage)
             post_ds.select(range(test_split_samples, len(post_ds))).push_to_hub(args.repo_id, split="train_prefs")
             post_ds.select(range(test_split_samples)).push_to_hub(args.repo_id, split="test_prefs")
-
             for file, name in zip([__file__], ["create_dataset.py"]):
                 api.upload_file(
                     path_or_fileobj=file,
