@@ -71,7 +71,7 @@ running scancel 1625164
 running scancel 1625165
 ```
 
-## FineWeb generations
+## Web generations
 Here we want to generate a large amount of textbooks from web datasets. Since the generations take a long time, we save intermediate generations in `checkpoint_path` and track the progress and throughput with `wandb`.
 ```bash
 pip install wandb
