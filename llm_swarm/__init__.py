@@ -5,7 +5,7 @@ import time
 from typing import List, Literal, Optional, TypeVar
 from huggingface_hub import get_session
 import requests
-
+from transformers import AutoTokenizer
 from itertools import cycle
 from shutil import get_terminal_size
 from threading import Thread
@@ -181,6 +181,7 @@ class LLMSwarm:
     def __init__(self, config: LLMSwarmConfig) -> None:
         self.config = config
         self.cleaned_up = False
+        self.tokenizer = AutoTokenizer.from_pretrained(config.model, revision=config.revision)
         os.makedirs(SLURM_LOGS_FOLDER, exist_ok=True)
 
     def start(self):
@@ -192,7 +193,7 @@ class LLMSwarm:
             if self.config.debug_endpoint.startswith("https://api-inference.huggingface.co/"):
                 self.suggested_max_parallel_requests = 40
             else:
-                self.suggested_max_parallel_requests = self.config.per_instance_max_parallel_requests
+                self.suggested_max_parallel_requests = self.config.per_instance_max_parallel_requests * self.config.instances
             return
 
         self.suggested_max_parallel_requests = self.config.per_instance_max_parallel_requests * self.config.instances
@@ -207,6 +208,8 @@ class LLMSwarm:
         slurm_template = slurm_template.replace(r"{{model}}", self.config.model)
         slurm_template = slurm_template.replace(r"{{revision}}", self.config.revision)
         slurm_template = slurm_template.replace(r"{{gpus}}", str(self.config.gpus))
+        slurm_template = slurm_template.replace(r"{{model_max_length}}", str(min(self.tokenizer.model_max_length, 32768)))
+        slurm_template = slurm_template.replace(r"{{model_input_length}}", str(min(self.tokenizer.model_max_length - 100, 32768 - 100))) # `model_input_length` needs to be smaller than `model_max_length`
         with open(slurm_path, "w") as f:
             f.write(slurm_template)
 
