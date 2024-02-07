@@ -2,16 +2,15 @@ import asyncio
 import json
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 import pandas as pd
-import wandb
-from dataclasses import asdict
 from datasets import load_dataset
 from huggingface_hub import AsyncInferenceClient
 from tqdm.asyncio import tqdm_asyncio
 from transformers import AutoTokenizer, HfArgumentParser
 
+import wandb
 from llm_swarm import LLMSwarm, LLMSwarmConfig
 
 HF_TOKEN = os.environ.get("HF_TOKEN", None)
@@ -32,7 +31,7 @@ class Args:
     """Generation top_p"""
     top_k: int = 50
     """Generation top_k"""
-    repetition_penalty: float = 1.2 
+    repetition_penalty: float = 1.2
     """Generation repetition_penalty"""
     # prompts dataset parameters
     prompts_dataset: str = "HuggingFaceTB/fw_prompts_data_textbook"
@@ -60,7 +59,6 @@ class Args:
     """Wandb username"""
     push_to_hub: bool = True
     """Whether to push to hub"""
-
 
 
 parser = HfArgumentParser((Args, LLMSwarmConfig))
@@ -143,10 +141,18 @@ with LLMSwarm(isc) as llm_swarm:
         total_tokens = 0
         saving_time = 0
 
-        wandb.init(project="synthetic_data", entity=args.wandb_username, name=repo_id.split("/")[1])
+        wandb.init(
+            project="synthetic_data",
+            entity=args.wandb_username,
+            name=repo_id.split("/")[1],
+        )
         wandb.config.update(asdict(args))
-    
-        repo_id = f"{args.repo_id}_{args.prompt_column}" if args.prompt_column not in args.repo_id else args.repo_id
+
+        repo_id = (
+            f"{args.repo_id}_{args.prompt_column}"
+            if args.prompt_column not in args.repo_id
+            else args.repo_id
+        )
         checkpoint_dir = f"{args.checkpoint_path}/{repo_id.split('/')[1]}/data"
         os.makedirs(checkpoint_dir, exist_ok=True)
         print(f"Will be saving at {checkpoint_dir}")
@@ -179,7 +185,7 @@ with LLMSwarm(isc) as llm_swarm:
                 {
                     "sample": i + args.checkpoint_interval,
                     "batch": int(i / args.checkpoint_interval),
-                    "total_tokens (M)": total_tokens/1e6,
+                    "total_tokens (M)": total_tokens / 1e6,
                     "tokens_per_batch": batch_tokens,
                     "time_per_batch (s)": time_per_chunk,
                     "generated_tokens_per_sec": int(batch_tokens / time_per_chunk),
@@ -188,10 +194,12 @@ with LLMSwarm(isc) as llm_swarm:
                     ),
                 }
             )
-    
-        end_time = time.time()   
 
-        print("Done processing and saving all chunks 🎉! Let's get some stats and push to hub...")
+        end_time = time.time()
+
+        print(
+            "Done processing and saving all chunks 🎉! Let's get some stats and push to hub..."
+        )
         total_duration = end_time - start_time
         overall_tokens_per_second = (
             total_tokens / total_duration if total_duration > 0 else 0
@@ -205,7 +213,9 @@ with LLMSwarm(isc) as llm_swarm:
 
         # load dataset
         print("Load checkpoints...")
-        output_ds = load_dataset("json", data_files=f"{checkpoint_dir}/*.json", split="train")
+        output_ds = load_dataset(
+            "json", data_files=f"{checkpoint_dir}/*.json", split="train"
+        )
         output_ds = output_ds.remove_columns(
             [
                 col
