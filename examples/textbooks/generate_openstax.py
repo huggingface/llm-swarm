@@ -21,6 +21,8 @@ class Args:
     """Number of TGI instances to use"""
     model_name: str = "mistralai/Mixtral-8x7B-Instruct-v0.1"
     """Model to prompt"""
+    prompts_dataset: str = "HuggingFaceTB/openstax_prompts_130k_v4"
+    """Dataset containing the prompts"""
     max_new_tokens: int = 2100
     """Max new tokens"""
     temperature: float = 0.6
@@ -49,7 +51,7 @@ isc.instances = args.tgi_instances
 tokenizer = AutoTokenizer.from_pretrained(args.model_name)
 
 ds = load_dataset(
-    "HuggingFaceTB/openstax_prompts_concatenated", token=HF_TOKEN, split="train"
+    args.prompts_dataset, token=HF_TOKEN, split="train"
 ).shuffle(seed=42)
 
 if args.max_samples > 0:
@@ -61,8 +63,8 @@ with LLMSwarm(isc) as llm_swarm:
     client = AsyncInferenceClient(model=llm_swarm.endpoint)
     STOP_SEQ = ["<|endoftext|>"]
 
-    MAX_RETRIES = 3  # maximum number of retries
-    RETRY_DELAY = 5  # delay in seconds between retries
+    MAX_RETRIES = 6  # maximum number of retries
+    RETRY_DELAY = 4  # delay in seconds between retries
 
     async def process_text(sample):
         token_length = 0
@@ -117,11 +119,15 @@ with LLMSwarm(isc) as llm_swarm:
             total_tokens / total_duration if total_duration > 0 else 0
         )
         print(f"Overall Tokens per Second: {overall_tokens_per_second}")
+        print(f"Generated {total_tokens / 1e6:.2f}M tokens")
+        print(f"Total duration: {total_duration // 3600}h{(total_duration % 3600) // 60}min ")
 
         # remove empty completions
-        output_ds = output_ds.filter(lambda x: x["completion"] != "")
+        final_data = output_ds.filter(lambda x: x["completion"] != "")
+        failed = output_ds.filter(lambda x: x["completion"] == "")
         print(output_ds)
         if args.push_to_hub:
-            output_ds.push_to_hub(args.repo_id, private=True)
+            final_data.push_to_hub(args.repo_id, private=True)
+            failed.push_to_hub(f"{args.repo_id}_failed", private=True)
 
     asyncio.run(main())
