@@ -243,7 +243,7 @@ with LLMSwarm(isc) as llm_swarm:
                 print(f"{len(failed)} generations failed")
                 size = min(len(failed), 1000)
                 failed = failed.select(range(size))
-                failed.push_to_hub("loubnabnl/failed", private=True)
+                failed.push_to_hub(f"{repo_id}_failed", private=True)
 
     asyncio.run(main())
     wandb.finish()
