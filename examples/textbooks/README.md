@@ -81,12 +81,12 @@ wandb init
 Then run:
 ```bash
 python /fsx/loubna/projects/llm-swarm/examples/textbooks/generate_fineweb_checkpoint.py \
-    --prompts_dataset "HuggingFaceTB/fw_prompts_data_textbook" \
+    --prompts_dataset "HuggingFaceTB/prompts_textbook" \
     --prompt_column prompt_textbook_academic \
     --start_sample 0 \
     --end_sample 1_000_000 \
-    --checkpoint_path "/fsx/loubna/projects/llm-swarm/fw_data" \
-    --repo_id "HuggingFaceTB/fw_generations_textbook_first_1M"
+    --checkpoint_path "./intermediate_data" \
+    --repo_id "HuggingFaceTB/synthetic_textbooks"
 ```
 
 ## Other
