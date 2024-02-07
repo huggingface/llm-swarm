@@ -1,6 +1,6 @@
 # Guidelines
 
-
+## OpenStax generations
 ```bash
 python ./examples/textbooks/generate_openstax.py --tgi_instances 5 --max_samples 50000
 ```
@@ -70,4 +70,16 @@ running scancel 1625163
 running scancel 1625164
 running scancel 1625165
 ```
+
+## FineWeb generations
+```bash
+python /fsx/loubna/projects/llm-swarm/examples/textbooks/generate_fineweb_checkpoint.py \
+    --prompts_dataset "HuggingFaceTB/fw_prompts_data_textbook" \
+    --prompt_column prompt_textbook_academic \
+    --start_sample 0 \
+    --end_sample 1_000_000 \
+    --repo_id "HuggingFaceTB/fw_generations_textbook_first_1M"
+```
+
+## Other
 Note: the `generate_rw_textbooks.py` requires installing  `requirements.txt` and  `datatrove` from source.
