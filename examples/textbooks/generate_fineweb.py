@@ -204,7 +204,7 @@ with LLMSwarm(isc) as llm_swarm:
         overall_tokens_per_second = (
             total_tokens / total_duration if total_duration > 0 else 0
         )
-        print(f"🏎️💨 Overall Tokens per Second: {overall_tokens_per_second:.2f}")
+        print(f"🏎️💨 Overall Tokens per Second: {overall_tokens_per_second:.2f}, per instance: {overall_tokens_per_second/args.tgi_instances:.2f}")
         print(f"Generated {total_tokens / 1e6:.2f}M tokens")
         print(
             f"Total duration: {total_duration // 3600}h{int((total_duration % 3600) // 60)}min "
