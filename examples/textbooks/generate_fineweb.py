@@ -5,6 +5,8 @@ import time
 from dataclasses import dataclass
 
 import pandas as pd
+import wandb
+from dataclasses import asdict
 from datasets import load_dataset
 from huggingface_hub import AsyncInferenceClient
 from tqdm.asyncio import tqdm_asyncio
@@ -35,14 +37,20 @@ class Args:
     """Generation top_k"""
     repetition_penalty: float = 1.2 
     """Generation repetition_penalty"""
+    num_proc: int = 36
+    """Number of processes for loading the dataset"""
     prompt_column: str = "prompt_blogpost"
     """Name of the column containing the prompt (from 'prompt_wikihow', 'prompt_textbook_narrative', 'prompt_textbook_academic', 'prompt_blogpost'"""
+    shuffle_dataset: bool = False
+    """Whether to shuffle the prompts"""
     repo_id: str = "HuggingFaceTB/fw_generations_test"
     """The repo id to push to"""
-    checkpoint_path: str = "/fsx/loubna/projects/llm-swarm/fw_data"
+    checkpoint_path: str = "./fw_data"
     """Path for saving intermediate generations"""
     checkpoint_interval: int = 10_000
     """Interval for saving intermediate generations"""
+    wandb_username: str = "loubnabnl"
+    """Wandb username"""
     push_to_hub: bool = True
     """Whether to push to hub"""
     start_sample: int = -1
@@ -59,18 +67,19 @@ print(args)
 isc.model = args.model_name
 isc.instances = args.tgi_instances
 tokenizer = AutoTokenizer.from_pretrained(args.model_name)
+SEED = 42
 
 ds = load_dataset(
-    args.prompts_dataset, token=HF_TOKEN, split="train", num_proc=36
+    args.prompts_dataset, token=HF_TOKEN, split="train", num_proc=args.num_proc
 )
-print("No shuffling")
-#.shuffle(seed=42)
+
+if args.shuffle_dataset:
+    ds = ds.shuffle(seed=SEED)
 
 if args.start_sample >= 0:
     end_sample = len(ds) if args.end_sample < 0 else args.end_sample
     print(f"Loading a defined range of samples: ({args.start_sample}, {end_sample})...")
     ds = ds.select(range(args.start_sample, end_sample))
-
 elif args.max_samples > 0:
     print(f"Loading the first {args.max_samples} samples...")
     ds = ds.select(range(args.max_samples))
@@ -130,6 +139,9 @@ with LLMSwarm(isc) as llm_swarm:
         total_tokens = 0
         saving_time = 0
 
+        wandb.init(project="synthetic_data", entity=args.wandb_username, name=repo_id.split("/")[1])
+        wandb.config.update(asdict(args))
+    
         repo_id = f"{args.repo_id}_{args.prompt_column}" if args.prompt_column not in args.repo_id else args.repo_id
         checkpoint_dir = f"{args.checkpoint_path}/{repo_id.split('/')[1]}/data"
         os.makedirs(checkpoint_dir, exist_ok=True)
@@ -137,26 +149,42 @@ with LLMSwarm(isc) as llm_swarm:
 
         total_samples = len(ds)
         for i in range(0, total_samples, args.checkpoint_interval):
+            batch_time = time.time()
             # Processing a chunk
-            print(f"Processing chunk {int(i/args.checkpoint_interval)}/{int(total_samples/args.checkpoint_interval)}")
+            print(
+                f"Processing chunk {int(i/args.checkpoint_interval)}/{int(total_samples/args.checkpoint_interval)}"
+            )
             end_index = min(i + args.checkpoint_interval, total_samples)
             chunk = ds.select(range(i, end_index))
             chunk_results = await tqdm_asyncio.gather(
                 *(process_text(sample) for sample in chunk)
             )
-            # Saving the chunk results
+            # Save the chunk results and log throughput
             temp_time = time.time()
-            checkpoint_path = os.path.join(
-                checkpoint_dir, f"checkpoint_{i}.json"
-            )
+            time_per_chunk = temp_time - batch_time
+            checkpoint_path = os.path.join(checkpoint_dir, f"checkpoint_{i}.json")
             with open(checkpoint_path, "w") as f:
                 json.dump(chunk_results, f)
 
             df = pd.DataFrame.from_records(chunk_results)
-            total_tokens += sum(df["token_length"])
+            batch_tokens = sum(df["token_length"])
+            total_tokens += batch_tokens
             saving_time += time.time() - temp_time
             print(f"💾 Checkpoint {i} saved at {checkpoint_path}.")
-
+            wandb.log(
+                {
+                    "sample": i + args.checkpoint_interval,
+                    "batch": int(i / args.checkpoint_interval),
+                    "total_tokens (M)": total_tokens/1e6,
+                    "tokens_per_batch": batch_tokens,
+                    "time_per_batch (s)": time_per_chunk,
+                    "generated_tokens_per_sec": int(batch_tokens / time_per_chunk),
+                    "generated_tokens_per_sec_per_node": int(
+                        batch_tokens / (time_per_chunk * args.tgi_instances)
+                    ),
+                }
+            )
+    
         end_time = time.time()   
 
         print("Done processing and saving all chunks 🎉! Let's get some stats and push to hub...")
@@ -204,3 +232,4 @@ with LLMSwarm(isc) as llm_swarm:
                 failed.push_to_hub("loubnabnl/failed", private=True)
 
     asyncio.run(main())
+    wandb.finish()
