@@ -32,8 +32,6 @@ class Args:
     """Whether to add a timestamp to the repo_id"""
     push_to_hub: bool = False
     """Whether to push to hub"""
-    test_split_percentage: float = 0.05
-    """The percentage of the dataset to use for testing"""
     debug: bool = False
     """Debug mode"""
     max_samples_per_source_category: int = 2
@@ -85,6 +83,7 @@ ds = ds.map(extract, load_from_cache_file=False, num_proc=1 if args.debug else m
 print("max token length", ds.to_pandas()["candidate0_token_length"].max())
 print("mean token length", ds.to_pandas()["candidate0_token_length"].mean())
 print("median token length", ds.to_pandas()["candidate0_token_length"].median())
+ds = ds.remove_columns(["system_prompt", ])
 with LLMSwarm(isc) as llm_swarm:
     semaphore = asyncio.Semaphore(llm_swarm.suggested_max_parallel_requests)
     print(f"{llm_swarm.suggested_max_parallel_requests=}")
@@ -105,7 +104,7 @@ with LLMSwarm(isc) as llm_swarm:
                         do_sample=args.do_sample,
                     )
                     row["candidate1"] = row["candidate0"][:-1] + [{"role": "assistant", "content": completion}]
-                    row["candidate1_policy"] = ":".join([isc.model, isc.revision])
+                    row["candidate1_policy"] = isc.model
                     tokens = tokenizer.apply_chat_template(row["candidate1"])
                     row["candidate1_token_length"] = len(tokens)
                     return row
@@ -152,9 +151,7 @@ with LLMSwarm(isc) as llm_swarm:
         post_ds = post_ds.filter(lambda x: x["candidate1"] != "") # remove empty completions
         print(post_ds)
         if args.push_to_hub:
-            test_split_samples = int(len(post_ds) * args.test_split_percentage)
-            post_ds.select(range(test_split_samples, len(post_ds))).push_to_hub(args.repo_id, split="train_prefs")
-            post_ds.select(range(test_split_samples)).push_to_hub(args.repo_id, split="test_prefs")
+            post_ds.push_to_hub(args.repo_id, split="train")
             for file, name in zip([__file__], ["create_dataset.py"]):
                 api.upload_file(
                     path_or_fileobj=file,
