@@ -70,22 +70,21 @@ def extract(row):
         conversations[1]["value"] = conversations[0]["value"] + " " + conversations[1]["value"]
         conversations = conversations[1:] # merge the first two
     sample["prompt"] = conversations[0]["value"]
-    sample["chosen_policy"] = conversations[1]["from"]
-    sample["chosen"] = []
+    sample["candidate0_policy"] = conversations[1]["from"]
+    sample["candidate0"] = []
     for i, conv in enumerate(conversations):
         if i % 2 == 0:
-            sample["chosen"].append({"role": "user", "content": conv["value"]})
+            sample["candidate0"].append({"role": "user", "content": conv["value"]})
         else:
-            sample["chosen"].append({"role": "assistant", "content": conv["value"]})
-    tokens = tokenizer.apply_chat_template(sample["chosen"])
-    sample["token_length"] = len(tokens)
+            sample["candidate0"].append({"role": "assistant", "content": conv["value"]})
+    tokens = tokenizer.apply_chat_template(sample["candidate0"])
+    sample["candidate0_token_length"] = len(tokens)
     return sample
 
 ds = ds.map(extract, load_from_cache_file=False, num_proc=1 if args.debug else multiprocessing.cpu_count())
-print("max token length", ds.to_pandas()["token_length"].max())
-print("mean token length", ds.to_pandas()["token_length"].mean())
-print("median token length", ds.to_pandas()["token_length"].median())
-# ds = ds.filter(lambda x: x["token_length"] < args.max_token_length, load_from_cache_file=False, num_proc=1 if args.debug else multiprocessing.cpu_count())
+print("max token length", ds.to_pandas()["candidate0_token_length"].max())
+print("mean token length", ds.to_pandas()["candidate0_token_length"].mean())
+print("median token length", ds.to_pandas()["candidate0_token_length"].median())
 with LLMSwarm(isc) as llm_swarm:
     semaphore = asyncio.Semaphore(llm_swarm.suggested_max_parallel_requests)
     print(f"{llm_swarm.suggested_max_parallel_requests=}")
@@ -95,7 +94,7 @@ with LLMSwarm(isc) as llm_swarm:
 
     async def process_text(row):
         attempt = 0
-        prompt = tokenizer.apply_chat_template(row["chosen"][:-1], tokenize=False)
+        prompt = tokenizer.apply_chat_template(row["candidate0"][:-1], tokenize=False)
         while attempt < MAX_RETRIES:
             try:
                 async with semaphore:
@@ -105,8 +104,10 @@ with LLMSwarm(isc) as llm_swarm:
                         temperature=args.temperature,
                         do_sample=args.do_sample,
                     )
-                    row["rejected"] = row["chosen"][:-1] + [{"role": "assistant", "content": completion}]
-                    row["rejected_policy"] = ":".join([isc.model, isc.revision])
+                    row["candidate1"] = row["candidate0"][:-1] + [{"role": "assistant", "content": completion}]
+                    row["candidate1_policy"] = ":".join([isc.model, isc.revision])
+                    tokens = tokenizer.apply_chat_template(row["candidate1"])
+                    row["candidate1_token_length"] = len(tokens)
                     return row
             except Exception as e: 
                 attempt += 1
@@ -119,8 +120,9 @@ with LLMSwarm(isc) as llm_swarm:
                     print(
                         f"Max retries reached. Failed to process the request with error {str(e)}."
                     )
-                    row["rejected"] = ""
-                    row["rejected_policy"] = ""
+                    row["candidate1"] = ""
+                    row["candidate1_policy"] = ""
+                    row["candidate1_token_length"] = 0
                     return row
 
     async def main():
@@ -147,7 +149,7 @@ with LLMSwarm(isc) as llm_swarm:
             #     os.remove(f"chunks_cache/cache_chunk{chunk_idx - 1}.arrow")
 
         post_ds = Dataset.from_list(results)
-        post_ds = post_ds.filter(lambda x: x["rejected"] != "") # remove empty completions
+        post_ds = post_ds.filter(lambda x: x["candidate1"] != "") # remove empty completions
         print(post_ds)
         if args.push_to_hub:
             test_split_samples = int(len(post_ds) * args.test_split_percentage)
