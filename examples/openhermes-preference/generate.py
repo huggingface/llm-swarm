@@ -75,15 +75,9 @@ def extract(row):
             sample["candidate0"].append({"role": "user", "content": conv["value"]})
         else:
             sample["candidate0"].append({"role": "assistant", "content": conv["value"]})
-    tokens = tokenizer.apply_chat_template(sample["candidate0"])
-    sample["candidate0_token_length"] = len(tokens)
     return sample
 
 ds = ds.map(extract, load_from_cache_file=False, num_proc=1 if args.debug else multiprocessing.cpu_count())
-print("max token length", ds.to_pandas()["candidate0_token_length"].max())
-print("mean token length", ds.to_pandas()["candidate0_token_length"].mean())
-print("median token length", ds.to_pandas()["candidate0_token_length"].median())
-ds = ds.remove_columns(["system_prompt", ])
 with LLMSwarm(isc) as llm_swarm:
     semaphore = asyncio.Semaphore(llm_swarm.suggested_max_parallel_requests)
     print(f"{llm_swarm.suggested_max_parallel_requests=}")
@@ -105,8 +99,6 @@ with LLMSwarm(isc) as llm_swarm:
                     )
                     row["candidate1"] = row["candidate0"][:-1] + [{"role": "assistant", "content": completion}]
                     row["candidate1_policy"] = isc.model
-                    tokens = tokenizer.apply_chat_template(row["candidate1"])
-                    row["candidate1_token_length"] = len(tokens)
                     return row
             except Exception as e: 
                 attempt += 1
@@ -121,7 +113,6 @@ with LLMSwarm(isc) as llm_swarm:
                     )
                     row["candidate1"] = ""
                     row["candidate1_policy"] = ""
-                    row["candidate1_token_length"] = 0
                     return row
 
     async def main():
@@ -148,6 +139,7 @@ with LLMSwarm(isc) as llm_swarm:
             #     os.remove(f"chunks_cache/cache_chunk{chunk_idx - 1}.arrow")
 
         post_ds = Dataset.from_list(results)
+        post_ds = post_ds.remove_columns(['system_prompt', 'model', 'avatarUrl', 'conversations','title', 'topic', 'skip_prompt_formatting', 'idx', 'hash', 'views', 'custom_instruction', 'language', 'id', 'model_name'])
         post_ds = post_ds.filter(lambda x: x["candidate1"] != "") # remove empty completions
         print(post_ds)
         if args.push_to_hub:
