@@ -1,20 +1,21 @@
 import asyncio
-from collections import defaultdict
-from dataclasses import dataclass
-import json
 import multiprocessing
 import os
-import pandas as pd
-from llm_swarm import LLMSwarm, LLMSwarmConfig
-from huggingface_hub import AsyncInferenceClient
-from transformers import AutoTokenizer, HfArgumentParser
-from tqdm.asyncio import tqdm_asyncio
-from datasets import load_dataset, Dataset
 import time
-from huggingface_hub import HfApi
+from collections import defaultdict
+from dataclasses import dataclass
+
+from datasets import Dataset, load_dataset
+from huggingface_hub import AsyncInferenceClient, HfApi
+from tqdm.asyncio import tqdm_asyncio
+from transformers import AutoTokenizer, HfArgumentParser
+
+from llm_swarm import LLMSwarm, LLMSwarmConfig
+
 api = HfApi()
 
 CHUNK_SIZE = 50000  # Define your chunk size here
+
 
 @dataclass
 class Args:
@@ -39,6 +40,7 @@ class Args:
     restart_chunk_index: int = 0
     """The index of the chunk to restart from"""
 
+
 parser = HfArgumentParser([Args, LLMSwarmConfig])
 args, isc = parser.parse_args_into_dataclasses()
 if args.timestamp:
@@ -47,26 +49,29 @@ if "/" not in args.repo_id:  # find the current user
     args.repo_id = f"{api.whoami()['name']}/{args.repo_id}"
 
 tokenizer = AutoTokenizer.from_pretrained(isc.model, revision=isc.revision)
-ds = load_dataset('teknium/OpenHermes-2.5', split="train")
+ds = load_dataset("teknium/OpenHermes-2.5", split="train")
 
 if args.max_samples_per_source_category > 0:
     count = defaultdict(int)
+
     def filter_unique(row):
         if count[f'{row["source"]}_{row["category"]}'] < args.max_samples_per_source_category:
             count[f'{row["source"]}_{row["category"]}'] += 1
             return True
         return False
+
     ds = ds.filter(filter_unique)
     print(ds.to_pandas()["source"].value_counts())
 if args.max_samples > 0:
     ds = ds.select(range(args.max_samples))
+
 
 def extract(row):
     sample = {}
     conversations = row["conversations"]
     if conversations[0]["from"] == "system":
         conversations[1]["value"] = conversations[0]["value"] + " " + conversations[1]["value"]
-        conversations = conversations[1:] # merge the first two
+        conversations = conversations[1:]  # merge the first two
     sample["prompt"] = conversations[0]["value"]
     sample["candidate0_policy"] = conversations[1]["from"]
     sample["candidate0"] = []
@@ -76,6 +81,7 @@ def extract(row):
         else:
             sample["candidate0"].append({"role": "assistant", "content": conv["value"]})
     return sample
+
 
 ds = ds.map(extract, load_from_cache_file=False, num_proc=1 if args.debug else multiprocessing.cpu_count())
 with LLMSwarm(isc) as llm_swarm:
@@ -100,17 +106,13 @@ with LLMSwarm(isc) as llm_swarm:
                     row["candidate1"] = row["candidate0"][:-1] + [{"role": "assistant", "content": completion}]
                     row["candidate1_policy"] = isc.model
                     return row
-            except Exception as e: 
+            except Exception as e:
                 attempt += 1
                 if attempt < MAX_RETRIES:
-                    print(
-                        f"Request failed, retrying in {RETRY_DELAY} seconds... (Attempt {attempt}/{MAX_RETRIES})"
-                    )
+                    print(f"Request failed, retrying in {RETRY_DELAY} seconds... (Attempt {attempt}/{MAX_RETRIES})")
                     await asyncio.sleep(RETRY_DELAY)
                 else:
-                    print(
-                        f"Max retries reached. Failed to process the request with error {str(e)}."
-                    )
+                    print(f"Max retries reached. Failed to process the request with error {str(e)}.")
                     row["candidate1"] = ""
                     row["candidate1_policy"] = ""
                     return row
@@ -139,8 +141,25 @@ with LLMSwarm(isc) as llm_swarm:
             #     os.remove(f"chunks_cache/cache_chunk{chunk_idx - 1}.arrow")
 
         post_ds = Dataset.from_list(results)
-        post_ds = post_ds.remove_columns(['system_prompt', 'model', 'avatarUrl', 'conversations','title', 'topic', 'skip_prompt_formatting', 'idx', 'hash', 'views', 'custom_instruction', 'language', 'id', 'model_name'])
-        post_ds = post_ds.filter(lambda x: x["candidate1"] != "") # remove empty completions
+        post_ds = post_ds.remove_columns(
+            [
+                "system_prompt",
+                "model",
+                "avatarUrl",
+                "conversations",
+                "title",
+                "topic",
+                "skip_prompt_formatting",
+                "idx",
+                "hash",
+                "views",
+                "custom_instruction",
+                "language",
+                "id",
+                "model_name",
+            ]
+        )
+        post_ds = post_ds.filter(lambda x: x["candidate1"] != "")  # remove empty completions
         print(post_ds)
         if args.push_to_hub:
             post_ds.push_to_hub(args.repo_id, split="train")
@@ -154,4 +173,3 @@ with LLMSwarm(isc) as llm_swarm:
             print(f"Pushed to https://huggingface.co/datasets/{args.repo_id}")
 
     asyncio.run(main())
-
