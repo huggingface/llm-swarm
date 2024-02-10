@@ -24,7 +24,7 @@ poetry run python \
 
 ## Preference Dataset PairRM Creation
 
-We uses the [PairRM](https://huggingface.co/llm-blender/PairRM) model to score pairs of chosen/rejected completions and then switches the preference dataset to those preferred by PairRM.
+We use the [PairRM](https://huggingface.co/llm-blender/PairRM) model to score pairs of chosen/rejected completions and then switch the preference dataset to those preferred by PairRM.
 
 ### Prerequisites
 
@@ -40,7 +40,10 @@ To process the preference data for a single shard, run the following command whe
 python dpo_pair_rm.py --num_shards 20 --shard_index 0
 ```
 
-After all the shard indices have been processed, the preference datasets can be concatenated and the final dataset can be pushed to the hub via:
+To run the PairRM model on all the data shards, one can call the `dpo_pair_rm.py` script in parallel for each shard index.
+
+
+After all the shard indices for the train/test splits have been processed, the preference dataset shards can be concatenated and the final dataset can be pushed to the hub via:
 
 ```bash
 python concat_and_push.py

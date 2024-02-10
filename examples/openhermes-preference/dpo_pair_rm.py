@@ -65,7 +65,7 @@ def main(argv):
     dataset = load_dataset(FLAGS.path, split=FLAGS.split)
     shard = dataset.shard(num_shards=FLAGS.num_shards, index=FLAGS.shard_index)
     pairrm_shard = shard.map(pairRM, batched=True, batch_size=FLAGS.batch_size)
-    pairrm_shard.save_to_disk(f"{FLAGS.output_path}_{FLAGS.shard_index}")
+    pairrm_shard.save_to_disk(f"{FLAGS.output_path}_{FLAGS.split}_{FLAGS.shard_index}")
 
 
 if __name__ == "__main__":
