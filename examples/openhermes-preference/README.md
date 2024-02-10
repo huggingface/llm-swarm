@@ -46,5 +46,5 @@ To run the PairRM model on all the data shards, one can call the `dpo_pair_rm.py
 After all the shard indices for the train/test splits have been processed, the preference dataset shards can be concatenated and the final dataset can be pushed to the hub via:
 
 ```bash
-python concat_and_push.py
+python concat_and_push.py --num_shards 20
 ```
