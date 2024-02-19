@@ -1,16 +1,31 @@
-from absl import app
-from absl import flags
-
+from dataclasses import dataclass
 from datasets import load_dataset
 import llm_blender
+from transformers import HfArgumentParser
+import multiprocessing
+import random
 
-FLAGS = flags.FLAGS
-flags.DEFINE_string("path", "HuggingFaceH4/openhermes_2.5_dpo_v0", "Datsaset path")
-flags.DEFINE_string("split", "train_prefs", "Dataset split to use")
-flags.DEFINE_string("output_path", "openhermes_2.5_dpo_pairrm_v0", "Save to disk path")
-flags.DEFINE_integer("batch_size", 512, "Batch size for dataset mapping function")
-flags.DEFINE_integer("num_shards", 20, "Number of shards to split the data")
-flags.DEFINE_integer("shard_index", 0, "Index of the shard to use")
+@dataclass
+class Args:
+    path: str = "HuggingFaceH4/openhermes_2.5_dpo_v0"
+    """Path to the dataset"""
+    split: str = "train_prefs"
+    """Dataset split to use"""
+    output_path: str = "openhermes_2.5_dpo_pairrm_v0"
+    """Save to disk path"""
+    batch_size: int = 512
+    """Batch size for dataset mapping function"""
+    num_shards: int = 1
+    """Number of shards to split the data"""
+    shard_index: int = 0
+    """Index of the shard to use"""
+    max_samples: int = 1024
+    """The maximum umber of samples to generate (use -1 for all))"""
+    debug: bool = False
+    """Debug mode"""
+
+parser = HfArgumentParser([Args])
+args = parser.parse_args_into_dataclasses()[0]
 
 
 blender = llm_blender.Blender()
@@ -28,10 +43,10 @@ def prepare_conversation(conversation):
     return transformed_conversation
 
 
-def pairRM(example, batch_size=80):
+def pairRM(row, batch_size=80):
     results = blender.compare_conversations(
-        [prepare_conversation(chosen) for chosen in example["chosen"]],
-        [prepare_conversation(rejected) for rejected in example["rejected"]],
+        [prepare_conversation(chosen) for chosen in row["candidate0"]],
+        [prepare_conversation(rejected) for rejected in row["candidate1"]],
         batch_size=batch_size,
     )
 
@@ -41,32 +56,61 @@ def pairRM(example, batch_size=80):
     rejected_policy = []
     for i, result in enumerate(results):
         if result == False:
-            new_chosen.append(example["rejected"][i])
-            new_reject.append(example["chosen"][i])
-            chosen_policy.append(example["rejected_policy"][i])
-            rejected_policy.append(example["chosen_policy"][i])
+            new_chosen.append(row["candidate1"][i])
+            new_reject.append(row["candidate0"][i])
+            chosen_policy.append(row["candidate1_policy"][i])
+            rejected_policy.append(row["candidate0_policy"][i])
         else:
-            new_chosen.append(example["chosen"][i])
-            new_reject.append(example["rejected"][i])
-            chosen_policy.append(example["chosen_policy"][i])
-            rejected_policy.append(example["rejected_policy"][i])
+            new_chosen.append(row["candidate0"][i])
+            new_reject.append(row["candidate1"][i])
+            chosen_policy.append(row["candidate0_policy"][i])
+            rejected_policy.append(row["candidate1_policy"][i])
 
-    example["chosen"] = new_chosen
-    example["rejected"] = new_reject
-    example["chosen_policy"] = chosen_policy
-    example["rejected_policy"] = rejected_policy
+    row["chosen"] = new_chosen
+    row["rejected"] = new_reject
+    row["chosen_policy"] = chosen_policy
+    row["rejected_policy"] = rejected_policy
 
-    return example
+    return row
 
+ds = load_dataset(args.path, split=args.split)
+if args.max_samples > 0:
+    ds = ds.select(range(args.max_samples))
+def modify(row):
+    row["chosen_policy"] = "gpt4"
 
-def main(argv):
-    del argv  # Unused.
+    responses = [row["chosen"], row["rejected"]]
+    policies = [row["chosen_policy"], row["rejected_policy"]]
+    indices = [0, 1]
+    random.shuffle(indices)
 
-    dataset = load_dataset(FLAGS.path, split=FLAGS.split)
-    shard = dataset.shard(num_shards=FLAGS.num_shards, index=FLAGS.shard_index)
-    pairrm_shard = shard.map(pairRM, batched=True, batch_size=FLAGS.batch_size)
-    pairrm_shard.save_to_disk(f"{FLAGS.output_path}_{FLAGS.split}_{FLAGS.shard_index}")
+    row["candidate0"] = responses[indices[0]]
+    row["candidate1"] = responses[indices[1]]
+    row["candidate0_policy"] = policies[indices[0]]
+    row["candidate1_policy"] = policies[indices[1]]
+    return row
 
+ds = ds.map(modify, load_from_cache_file=False, num_proc=1 if args.debug else multiprocessing.cpu_count())
+ds = ds.remove_columns(
+    [
+        'system_prompt', 'model', 'avatarUrl', 'conversations', 'title',
+        'skip_prompt_formatting', 'idx', 'hash', 'views', 'custom_instruction',
+        'language', 'id', 'model_name', 'chosen_policy', 'chosen', 
+        'token_length', 'rejected', 'rejected_policy',
+    ]
+)
+df = ds.to_pandas()
+# print(df["candidate0_policy"][:10])
+# print(df["candidate0"][0])
 
-if __name__ == "__main__":
-    app.run(main)
+shard = ds.shard(num_shards=args.num_shards, index=args.shard_index)
+pairrm_shard = shard.map(pairRM, batched=True, batch_size=args.batch_size, load_from_cache_file=False)
+pairrm_shard.save_to_disk(f"{args.output_path}_{args.split}_{args.shard_index}")
+
+# visualization
+df = pairrm_shard.to_pandas()
+# print(df["candidate0_policy"][:10])
+# print(df["candidate0"][0])
+print(args.path)
+print(df["chosen_policy"].value_counts())
+# print(df["chosen_policy"][:10])

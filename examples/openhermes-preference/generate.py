@@ -35,6 +35,8 @@ class Args:
     """Whether to push to hub"""
     debug: bool = False
     """Debug mode"""
+    shuffle: bool = False
+    """whether to shuffle"""
     max_samples_per_source_category: int = 2
     """The maximum number of samples per source"""
     restart_chunk_index: int = 0
@@ -62,9 +64,10 @@ if args.max_samples_per_source_category > 0:
 
     ds = ds.filter(filter_unique)
     print(ds.to_pandas()["source"].value_counts())
+if args.shuffle:
+    ds = ds.shuffle(seed=42)
 if args.max_samples > 0:
     ds = ds.select(range(args.max_samples))
-
 
 def extract(row):
     sample = {}
@@ -109,7 +112,7 @@ with LLMSwarm(isc) as llm_swarm:
             except Exception as e:
                 attempt += 1
                 if attempt < MAX_RETRIES:
-                    print(f"Request failed, retrying in {RETRY_DELAY} seconds... (Attempt {attempt}/{MAX_RETRIES})")
+                    print(f"Request failed, retrying in {RETRY_DELAY} seconds... (Attempt {attempt}/{MAX_RETRIES})  {str(e)}")
                     await asyncio.sleep(RETRY_DELAY)
                 else:
                     print(f"Max retries reached. Failed to process the request with error {str(e)}.")
@@ -137,8 +140,8 @@ with LLMSwarm(isc) as llm_swarm:
             print(f"Chunk {chunk_idx}/{num_chunks} took {time.time() - start_time} seconds")
             post_ds = Dataset.from_list(results)
             post_ds.save_to_disk(f"chunks_cache/cache_chunk{chunk_idx}.arrow")
-            # if chunk_idx > 0:
-            #     os.remove(f"chunks_cache/cache_chunk{chunk_idx - 1}.arrow")
+            if chunk_idx > 1:
+                os.remove(f"chunks_cache/cache_chunk{chunk_idx - 1}.arrow")
 
         post_ds = Dataset.from_list(results)
         post_ds = post_ds.remove_columns(
