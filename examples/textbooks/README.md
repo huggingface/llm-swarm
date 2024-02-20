@@ -1,41 +1,59 @@
 # Guidelines
 
-## OpenStax generations
+Here you can find the code used to generate large synthetic datasets like [Cosmopedia](https://huggingface.co/datasets/HuggingFaceTB/cosmopedia). You need to have a dataset containing prompts, in this case we're using [cosmopedia-100k](https://huggingface.co/datasets/HuggingFaceTB/cosmopedia-100k).
+
+## Setup
+Since we want to generate a large volume of textbooks and the generations might take a long time, we save the intermediate generations in `checkpoint_path` and track the progress and throughput with `wandb`.
 ```bash
-python ./examples/textbooks/generate_openstax.py --tgi_instances 5 --max_samples 50000
+pip install wandb
+wandb init
 ```
+
+## Generation
+To run the generations on the first 2000 prompts on 2 TGI instances, you can use:
+```bash
+python ./examples/textbooks/generate_syntehtic_textbooks.py \
+    --model mistralai/Mixtral-8x7B-Instruct-v0.1 \
+    --instances 2 \
+    --prompts_dataset "HuggingFaceTB/cosmopedia-100k" \
+    --prompt_column prompt \
+    --max_samples 2000 \
+    --checkpoint_path "./synthetic_data" \
+    --checkpoint_interval 1000
 ```
-(textbooks) loubna@login-node-1:/fsx/loubna/projects/llm-swarm$ python ./examples/textbooks/generate_openstax.py             
-Args(max_samples=50000, max_new_tokens=2100, temperature=0.6, top_p=0.95, top_k=50, repetition_penalty=1.2, prompt_column='prompt', repo_id='HuggingFaceTB/o
-penstax_generations_f', push_to_hub=True)                                                                                                                   
-running sbatch --parsable slurm/tgi_1706882419_tgi.slurm                                                                                            
-running sbatch --parsable slurm/tgi_1706882419_tgi.slurm                                                                                            
-running sbatch --parsable slurm/tgi_1706882419_tgi.slurm                                                                                            
-running sbatch --parsable slurm/tgi_1706882419_tgi.slurm                                                                                            
-running sbatch --parsable slurm/tgi_1706882419_tgi.slurm                                                                                                    
-Slurm Job ID: ['1625161', '1625162', '1625163', '1625164', '1625165']                                                                                       
-📖 Slurm hosts path: slurm/tgi_1706882419_host_tgi.txt                                                                                                      
-✅ Done! Waiting for 1625161 to be created                                                                                                                  
-📖 Slurm log path: slurm/logs/llm-swarm_1625161.out                                                                                                         
-✅ Done! Waiting for 1625162 to be created                                                                                                                  
-📖 Slurm log path: slurm/logs/llm-swarm_1625162.out                                                                                                         
-✅ Done! Waiting for 1625163 to be created                                                                                                          ...                                                                                       
-obtained endpoints ['http://26.0.172.147:22882', 'http://26.0.175.19:32335', 'http://26.0.172.142:53787', 'http://26.0.172.252:44532', 'http://26.0.173.7:28
-863']                                                                                                                                                       
-⣽ Waiting for http://26.0.172.147:22882 to be reachable                                                                                                     
-Connected to http://26.0.172.147:22882                                                                                                                      
-✅ Done! Waiting for http://26.0.172.147:22882 to be reachable                                                                                              
-⣟ Waiting for http://26.0.175.19:32335 to be reachable                                                                                                      
-Connected to http://26.0.175.19:32335                                                                                                               ...              
-Endpoints running properly: ['http://26.0.172.147:22882', 'http://26.0.175.19:32335', 'http://26.0.172.142:53787', 'http://26.0.172.252:44532', 'http://26.0
-.173.7:28863']
+The output will look like this:
+```
+(textbooks) loubna@login-node-1:/fsx/loubna/projects/llm-swarm$ python ./examples/textbooks/generate_syntehtic_textbooks.py \
+    --model mistralai/Mixtral-8x7B-Instruct-v0.1 \
+    --instances 2 \
+    --prompts_dataset "HuggingFaceTB/cosmopedia-100k" \
+    --prompt_column prompt \
+    --max_samples 2000 \
+    --checkpoint_path "./synthetic_data" \
+    --checkpoint_interval 1000
+{'max_new_tokens': 2500, 'temperature': 0.6, 'top_p': 0.95, 'top_k': 50, 'repetition_penalty': 1.2, 'prompts_dataset': 'HuggingFaceTB/cosmopedia-100k', 'max_samples': 2000, 'start_sample': -1, 'end_sample': -1, 'seed': 42, 'prompt_column': 'prompt', 'shuffle_dataset': False, 'debug': False, 'repo_id': 'HuggingFaceTB/synthetic_data_test', 'checkpoint_path': './synthetic_data', 'checkpoint_interval': 1000, 'wandb_username': 'NAME', 'min_token_length': 150, 'push_to_hub': True, 'per_instance_max_parallel_requests': 500, 'instances': 2, 'inference_engine': 'tgi', 'model': 'mistralai/Mixtral-8x7B-Instruct-v0.1'}
+Loading the first 1000 samples...
+running sbatch --parsable slurm/tgi_1708388771_tgi.slurm
+running sbatch --parsable slurm/tgi_1708388771_tgi.slurm
+Slurm Job ID: ['2179705', '2179706']
+📖 Slurm hosts path: slurm/tgi_1708388771_host_tgi.txt
+✅ Done! Waiting for 2179705 to be created                                                                                                                                                          
+📖 Slurm log path: slurm/logs/llm-swarm_2179705.out
+✅ Done! Waiting for 2179706 to be created                                                                                                                                                          
+📖 Slurm log path: slurm/logs/llm-swarm_2179706.out
+✅ Done! Waiting for slurm/tgi_1708388771_host_tgi.txt to be created                                                                                                                                
+obtained endpoints [MASKED_ENDPOINTS]                                                                                                                   
+⢿ Waiting for [MASKED_ENDPOINTS]  to be reachable
+Connected to [MASKED_ENDPOINTS] 
+✅ Done! Waiting for [MASKED_ENDPOINTS] to be reachable                                                                                                                            
+⣻ Waiting for [MASKED_ENDPOINTS]  to be reachable
+Connected to [MASKED_ENDPOINTS] 
+✅ Done! Waiting for [MASKED_ENDPOINTS] to be reachable                                                                                                                           
+Endpoints running properly: ['[MASKED_ENDPOINTS]', '[MASKED_ENDPOINTS]']
 ✅ test generation
 ✅ test generation
-✅ test generation
-✅ test generation
-✅ test generation
-running sudo docker run -d -p 37809:37809 --network host -v $(pwd)/slurm/tgi_1706882419_load_balancer.conf:/etc/nginx/nginx.conf nginx
-running sudo docker logs 520880ab48aa6563ebf2a85f5af02d3bfce7780fb498ec06e4bde92af924ab56
+running sudo docker run -d -p 44227:44227 --network host -v $(pwd)/slurm/tgi_1708388771_load_balancer.conf:/etc/nginx/nginx.conf nginx
+running sudo docker logs b79ac41505de597196ae7825fda2ad8a60d1c66bc6a8b46038a121d8092198c9
 /docker-entrypoint.sh: /docker-entrypoint.d/ is not empty, will attempt to perform configuration
 /docker-entrypoint.sh: Looking for shell scripts in /docker-entrypoint.d/
 /docker-entrypoint.sh: Launching /docker-entrypoint.d/10-listen-on-ipv6-by-default.sh
@@ -45,49 +63,44 @@ running sudo docker logs 520880ab48aa6563ebf2a85f5af02d3bfce7780fb498ec06e4bde92
 /docker-entrypoint.sh: Launching /docker-entrypoint.d/20-envsubst-on-templates.sh
 /docker-entrypoint.sh: Launching /docker-entrypoint.d/30-tune-worker-processes.sh
 /docker-entrypoint.sh: Configuration complete; ready for start up
-🔥 endpoint ready http://localhost:37809
-llm_swarm.suggested_max_parallel_requests was 2500
-  3%|███▏                                                                                                              | 1393/50000 [02:06<38:47, 20.88it/s]
-Request failed, retrying in 5 seconds... (Attempt 1/3)
- 47%|█████████████████████████████████████████████████████▏                                                           | 23550/50000 [22:09<23:24, 18.84it/s]
-Request failed, retrying in 5 seconds... (Attempt 1/3)
- 96%|████████████████████████████████████████████████████████████████████████████████████████████████████████████▍    | 47997/50000 [44:20<02:19, 14.35it/s]
-Request failed, retrying in 5 seconds... (Attempt 2/3)
-96%|████████████████████████████████████████████████████████████████████████████████████████████████████████████▋    | 48104/50000 [44:25<01:34, 20.13it/s]
-Max retries reached. Failed to process the request with error Input validation error: `inputs` must have less than 2048 tokens. Given: 2085.
-Max retries reached. Failed to process the request with error Input validation error: `inputs` must have less than 2048 tokens. Given: 2134.
-100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 50000/50000 [45:50<00:00, 18.18it/s]
-Overall Tokens per Second: 15596.257617119521
+🔥 endpoint ready http://localhost:44227
+wandb: Currently logged in as: NAME. Use `wandb login --relogin` to force relogin
+wandb: Tracking run with wandb version 0.16.3
+wandb: Run data is saved locally in ./wandb/run-20240220_003007-3jlhm7lw
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run synthetic_data_test_prompt
+wandb: ⭐️ View project at https://wandb.ai/NAME/synthetic_data
+wandb: 🚀 View run at https://wandb.ai/NAME/v/runs/3jlhm7lw
+Will be saving at ./synthetic_data/synthetic_data_test_prompt/data
+Processing chunk 0/2
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 1000/1000 [02:27<00:00,  6.79it/s]
+Saving the dataset (1/1 shards): 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████| 1000/1000 [00:00<00:00, 68625.21 examples/s]
+💾 Checkpoint (samples 0-1000) saved at ./synthetic_data/synthetic_data_test_prompt/data/checkpoint_0.json.
+Processing chunk 1/2
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 1000/1000 [02:30<00:00,  6.64it/s]
+Saving the dataset (1/1 shards): 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████| 1000/1000 [00:00<00:00, 82626.85 examples/s]
+💾 Checkpoint (samples 1000-2000) saved at ./synthetic_data/synthetic_data_test_prompt/data/checkpoint_1000.json.
+Done processing and saving all chunks 🎉! Let's get some stats and push to hub...
+🏎️💨 Overall Tokens per Second: 5890.90, per instance: 2945.45
+Generated 1.57M tokens
+Total duration: 0.0h5min 
+Saving time: 0.15408611297607422s=0.0025681018829345702min 
+Load checkpoints...
+Generating train split: 2000 examples [00:00, 13738.53 examples/s]
+Filter: 100%|██████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 200/200 [00:00<00:00, 7032.53 examples/s]
 Dataset({
-    features: ['prompt', 'unit', 'book title', 'audience', 'completion', 'token_length'],
-    num_rows: 50000
+    features: ['prompt', 'text_token_length', 'text', 'seed_data', 'format', 'audience', 'completion', 'token_length'],
+    num_rows: 1999
 })
-Creating parquet from Arrow format: 100%|███████████████████████████████████████████████████████████████████████████████████| 50/50 [00:00<00:00, 56.37ba/s]
-Uploading the dataset shards: 100%|███████████████████████████████████████████████████████████████████████████████████████████| 1/1 [00:03<00:00,  3.81s/it]
-running scancel 1625161
-running scancel 1625162
-running scancel 1625163
-running scancel 1625164
-running scancel 1625165
+📨 Pushing dataset to HuggingFaceTB/synthetic_data_test_prompt
+Creating parquet from Arrow format: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00, 61.16ba/s]
+Uploading the dataset shards: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  1.74it/s]
+Dataset pushed!
+1 generations failed
+Creating parquet from Arrow format: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00, 1698.10ba/s]
+Uploading the dataset shards: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  3.54it/s]
+running scancel 2179729
+running scancel 2179730
+inference instances terminated
 ```
 
-## Web generations
-Here we want to generate a large amount of textbooks from web datasets. Since the generations take a long time, we save intermediate generations in `checkpoint_path` and track the progress and throughput with `wandb`.
-```bash
-pip install wandb
-wandb init
-```
-
-Then run:
-```bash
-python /fsx/loubna/projects/llm-swarm/examples/textbooks/generate_fineweb_checkpoint.py \
-    --prompts_dataset "HuggingFaceTB/prompts_textbook" \
-    --prompt_column prompt_textbook_academic \
-    --start_sample 0 \
-    --end_sample 1_000_000 \
-    --checkpoint_path "./intermediate_data" \
-    --repo_id "HuggingFaceTB/synthetic_textbooks"
-```
-
-## Other
-Note: the `generate_rw_textbooks.py` requires installing  `requirements.txt` and  `datatrove` from source.
