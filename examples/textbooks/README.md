@@ -12,6 +12,7 @@ wandb init
 ## Generation
 To run the generations on the first 2000 prompts on 2 TGI instances, you can use:
 ```bash
+# Use --max_samples -1 to generate for the whole dataset
 python ./examples/textbooks/generate_syntehtic_textbooks.py \
     --model mistralai/Mixtral-8x7B-Instruct-v0.1 \
     --instances 2 \
