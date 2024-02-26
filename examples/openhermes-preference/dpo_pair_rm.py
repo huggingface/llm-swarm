@@ -4,14 +4,15 @@ import llm_blender
 from transformers import HfArgumentParser
 import multiprocessing
 import random
-
+import warnings
+warnings.filterwarnings("ignore")
 @dataclass
 class Args:
-    path: str = "HuggingFaceH4/openhermes_2.5_dpo_v0"
+    path: str = "vwxyzjn/openhermes-dev__combined__1708612612"
     """Path to the dataset"""
-    split: str = "train_prefs"
+    split: str = "train"
     """Dataset split to use"""
-    output_path: str = "openhermes_2.5_dpo_pairrm_v0"
+    output_path: str = "openhermes_merged"
     """Save to disk path"""
     batch_size: int = 512
     """Batch size for dataset mapping function"""
@@ -19,7 +20,7 @@ class Args:
     """Number of shards to split the data"""
     shard_index: int = 0
     """Index of the shard to use"""
-    max_samples: int = 1024
+    max_samples: int = 128
     """The maximum umber of samples to generate (use -1 for all))"""
     debug: bool = False
     """Debug mode"""
@@ -43,74 +44,70 @@ def prepare_conversation(conversation):
     return transformed_conversation
 
 
-def pairRM(row, batch_size=80):
-    results = blender.compare_conversations(
-        [prepare_conversation(chosen) for chosen in row["candidate0"]],
-        [prepare_conversation(rejected) for rejected in row["candidate1"]],
-        batch_size=batch_size,
+def pairRM(rows, batch_size=80):
+    instructions = ["Finish the following coversation in each i-th turn by filling in <Response i> with your response."] * len(rows["candidates_completions"])
+    cands = []
+    for i in range(len(rows["candidates_completions"])):
+        row_cand = []
+        for j in range(len(rows["candidates_completions"][i])):
+            row_cand.append([
+                {"role": "user", "content": rows["prompt"][i]},
+                {"role": "assistant", "content": rows["candidates_completions"][i][j]}
+            ])
+        cands.append(row_cand)
+
+    inputs = [
+        "\n".join([
+            "USER: " + x[i]['content'] +
+            f"\nAssistant: <Response {i//2+1}>" for i in range(0, len(x), 2)
+        ]) for x in [prepare_conversation(item[0]) for item in cands]
+    ]
+    cand_texts = []
+    for j in range(len(rows["candidates_completions"][i])):
+        cand_texts.append([
+            "\n".join([
+                f"<Response {i//2+1}>: " + x[i]['content'] for i in range(1, len(x), 2)
+            ]) for x in [prepare_conversation(item[j]) for item in cands]
+        ])
+    results = blender.rank(
+        inputs,
+        list(zip(*cand_texts)),
+        instructions,
     )
-
-    new_chosen = []
-    new_reject = []
-    chosen_policy = []
-    rejected_policy = []
-    for i, result in enumerate(results):
-        if result == False:
-            new_chosen.append(row["candidate1"][i])
-            new_reject.append(row["candidate0"][i])
-            chosen_policy.append(row["candidate1_policy"][i])
-            rejected_policy.append(row["candidate0_policy"][i])
-        else:
-            new_chosen.append(row["candidate0"][i])
-            new_reject.append(row["candidate1"][i])
-            chosen_policy.append(row["candidate0_policy"][i])
-            rejected_policy.append(row["candidate1_policy"][i])
-
-    row["chosen"] = new_chosen
-    row["rejected"] = new_reject
-    row["chosen_policy"] = chosen_policy
-    row["rejected_policy"] = rejected_policy
-
-    return row
+    # print(results)
+    ranks = [[p-1 for p in item] for i, item in enumerate(results)]
+    rank_str = [" > ".join([rows["candidate_policies"][i][p-1] for p in item]) for i, item in enumerate(results)]
+    rows["ranks"] = ranks
+    rows["rank_str"] = rank_str
+    rows["chosen_policy"] = [rows["candidate_policies"][i][r[0]] for i, r in enumerate(ranks)]
+    rows["chosen"] = [cands[i][r[0]] for i, r in enumerate(ranks)]
+    rows["rejected_policy"] = [rows["candidate_policies"][i][r[-1]] for i, r in enumerate(ranks)]
+    rows["rejected"] = [cands[i][r[-1]] for i, r in enumerate(ranks)]
+    return rows
 
 ds = load_dataset(args.path, split=args.split)
 if args.max_samples > 0:
     ds = ds.select(range(args.max_samples))
+
 def modify(row):
-    row["chosen_policy"] = "gpt4"
-
-    responses = [row["chosen"], row["rejected"]]
-    policies = [row["chosen_policy"], row["rejected_policy"]]
-    indices = [0, 1]
+    candidates_completions = row["candidates_completions"]
+    candidate_policies = row["candidate_policies"]
+    indices = [0, 1, 2]
     random.shuffle(indices)
-
-    row["candidate0"] = responses[indices[0]]
-    row["candidate1"] = responses[indices[1]]
-    row["candidate0_policy"] = policies[indices[0]]
-    row["candidate1_policy"] = policies[indices[1]]
+    new_candidates_completions = [candidates_completions[i] for i in indices]
+    new_candidate_policies = [candidate_policies[i] for i in indices]
+    row["candidates_completions"] = new_candidates_completions
+    row["candidate_policies"] = new_candidate_policies
     return row
 
 ds = ds.map(modify, load_from_cache_file=False, num_proc=1 if args.debug else multiprocessing.cpu_count())
-ds = ds.remove_columns(
-    [
-        'system_prompt', 'model', 'avatarUrl', 'conversations', 'title',
-        'skip_prompt_formatting', 'idx', 'hash', 'views', 'custom_instruction',
-        'language', 'id', 'model_name', 'chosen_policy', 'chosen', 
-        'token_length', 'rejected', 'rejected_policy',
-    ]
-)
 df = ds.to_pandas()
-# print(df["candidate0_policy"][:10])
-# print(df["candidate0"][0])
-
 shard = ds.shard(num_shards=args.num_shards, index=args.shard_index)
 pairrm_shard = shard.map(pairRM, batched=True, batch_size=args.batch_size, load_from_cache_file=False)
 pairrm_shard.save_to_disk(f"{args.output_path}_{args.split}_{args.shard_index}")
 
 # visualization
 df = pairrm_shard.to_pandas()
-# print(df["candidate0_policy"][:10])
-# print(df["candidate0"][0])
 print(args.path)
+print(df["rank_str"].value_counts())
 print(df["chosen_policy"].value_counts())
-# print(df["chosen_policy"][:10])
