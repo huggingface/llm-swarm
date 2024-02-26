@@ -26,6 +26,11 @@ python \
     --max_new_tokens=1024 > output.txt 2> output_error.txt
 ```
 
+We split the generations by default to 20 chunks, and each chunk took about 40 mins to generate on a 8xH100 machine, the total generation time is about 13~16 hours. The generation speed also scales with the number of instances, so you can use your hardwares with great flexibility.
+
+![](generation.png)
+
+
 You can then perform similar procedure with models like `NousResearch/Nous-Hermes-2-Yi-34B`.
 
 
