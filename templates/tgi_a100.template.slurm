@@ -40,8 +40,8 @@ sudo docker run \
     ghcr.io/huggingface/text-generation-inference \
     --model-id $model \
     --max-concurrent-requests 2000 \
-    --max-total-tokens 8192 \
-    --max-input-length 7144 \
-    --max-batch-prefill-tokens 8192 \
+    --max-total-tokens {{model_max_length}} \
+    --max-input-length {{model_input_length}} \
+    --max-batch-prefill-tokens {{model_max_length}} \
 
 echo "End of job"
