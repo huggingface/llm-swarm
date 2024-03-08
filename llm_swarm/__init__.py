@@ -63,10 +63,17 @@ def make_sure_jobs_are_still_running(job_ids: List[str]):
                 raise
 
 
-def get_unused_port():
-    sock = socket.socket()
-    sock.bind(("", 0))
-    return sock.getsockname()[1]
+def get_unused_port(start=50000, end=65535):
+    for port in range(start, end + 1):
+        try:
+            sock = socket.socket()
+            sock.bind(("", port))
+            sock.listen(1)
+            sock.close()
+            return port
+        except OSError:
+            continue
+    raise IOError("No free ports available in range {}-{}".format(start, end))
 
 
 def test_generation(endpoint):
