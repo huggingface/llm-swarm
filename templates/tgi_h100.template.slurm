@@ -4,7 +4,6 @@
 #SBATCH --gpus={{gpus}}
 #SBATCH --cpus-per-task=12
 #SBATCH --mem-per-cpu=11G
-#SBATCH --qos=high
 #SBATCH -o slurm/logs/%x_%j.out
 
 # For HF cluster internal users: Check if /fsx directory exists
