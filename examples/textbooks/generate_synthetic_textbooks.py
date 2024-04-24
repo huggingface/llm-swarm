@@ -18,7 +18,7 @@ HF_TOKEN = os.environ.get("HF_TOKEN", None)
 @dataclass
 class Args:
     # gneration parameters
-    max_new_tokens: int = 2500
+    max_new_tokens: int = 1500
     """Max new tokens"""
     temperature: float = 0.6
     """Generation temperature"""
@@ -107,18 +107,30 @@ with LLMSwarm(isc) as llm_swarm:
         while attempt < MAX_RETRIES:
             try:
                 async with semaphore:
+                    if "llama" in isc.model.lower():
+                        STOP_SEQ = ["<|end_of_text|>", "<|eot_id|>"]
+                        messages = [
+                            {"role": "user", "content": sample[args.prompt_column]}
+                        ]
+                        add_generation_prompt=True
+                    else:
+                        messages = [{"role": "user", "content": sample[args.prompt_column]}]
+                        add_generation_prompt=False
                     completion = await client.text_generation(
                         prompt=tokenizer.apply_chat_template(
-                            [{"role": "user", "content": sample[args.prompt_column]}],
+                            messages,
                             tokenize=False,
+                            add_generation_prompt=add_generation_prompt
                         ),
                         max_new_tokens=args.max_new_tokens,
                         stop_sequences=STOP_SEQ,
+                        do_sample=True,
                         temperature=args.temperature,
                         top_p=args.top_p,
                         top_k=args.top_k,
                         repetition_penalty=args.repetition_penalty,
-                    )
+                        seed=args.seed,
+                        )
                     for stop_seq in STOP_SEQ:
                         if completion.endswith(stop_seq):
                             completion = completion[: -len(stop_seq)].rstrip()
@@ -147,23 +159,13 @@ with LLMSwarm(isc) as llm_swarm:
         total_tokens = 0
         saving_time = 0
 
-        repo_id = (
-            f"{args.repo_id}_{args.prompt_column}"
-            if args.prompt_column not in args.repo_id
-            else args.repo_id
-        )
+        repo_id = args.repo_id
         wandb.init(
             project="synthetic_data",
             entity=args.wandb_username,
             name=repo_id.split("/")[1],
         )
         wandb.config.update(args_dict)
-
-        repo_id = (
-            f"{args.repo_id}_{args.prompt_column}"
-            if args.prompt_column not in args.repo_id
-            else args.repo_id
-        )
         checkpoint_dir = f"{args.checkpoint_path}/{repo_id.split('/')[1]}/data"
         os.makedirs(checkpoint_dir, exist_ok=True)
         print(f"Will be saving at {checkpoint_dir}")
@@ -183,7 +185,7 @@ with LLMSwarm(isc) as llm_swarm:
             # Save the chunk results and log throughput
             temp_time = time.time()
             time_per_chunk = temp_time - batch_time
-            checkpoint_path = os.path.join(checkpoint_dir, f"checkpoint_{i}.json")
+            checkpoint_path = os.path.join(checkpoint_dir, f"checkpoint_{i+1}.json")
             intermediate_ds = Dataset.from_list(chunk_results)
             intermediate_ds.to_json(checkpoint_path)
             batch_tokens = sum(intermediate_ds["token_length"])
@@ -231,15 +233,13 @@ with LLMSwarm(isc) as llm_swarm:
         )
         print(final_data)
         failed = output_ds.filter(lambda x: x["token_length"] <= args.min_token_length)
-        print(final_data)
+        print(f"failed: {failed}")
         if args.push_to_hub:
             print(f"📨 Pushing dataset to {repo_id}")
             final_data.push_to_hub(repo_id, private=True)
             print("Dataset pushed!")
             if len(failed) > 0:
                 print(f"{len(failed)} generations failed")
-                size = min(len(failed), 1000)
-                failed = failed.select(range(size))
                 failed.push_to_hub(f"{repo_id}_failed", private=True)
 
     asyncio.run(main())
