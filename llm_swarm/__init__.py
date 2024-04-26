@@ -20,7 +20,7 @@ SLURM_LOGS_FOLDER = "slurm/logs"
 class LLMSwarmConfig:
     instances: int = 1
     """number of inference instances"""
-    inference_engine: Literal["tgi", "vllm"] = "tgi"
+    inference_engine: Literal["tgi", "vllm", "tei"] = "tgi"
     """inference engine to use"""
     slurm_template_path: str = "templates/tgi_h100.template.slurm"
     """path to slurm template"""
@@ -36,6 +36,8 @@ class LLMSwarmConfig:
     """maximum number of parallel requests per instance"""
     debug_endpoint: Optional[str] = None
     """endpoint to use for debugging (e.g. http://localhost:13120)"""
+    max_batch_tokens: int = 32768
+    """maximum number of tokens per batch (text-embeddings-inference only)"""
 
 
 def run_command(command: str):
@@ -217,6 +219,7 @@ class LLMSwarm:
         slurm_template = slurm_template.replace(r"{{gpus}}", str(self.config.gpus))
         slurm_template = slurm_template.replace(r"{{model_max_length}}", str(min(self.tokenizer.model_max_length, 32768)))
         slurm_template = slurm_template.replace(r"{{model_input_length}}", str(min(self.tokenizer.model_max_length - 100, 32768 - 100))) # `model_input_length` needs to be smaller than `model_max_length`
+        slurm_template = slurm_template.replace(r"{{max_batch_tokens}}", str(min(self.config.max_batch_tokens, 32768)))
         with open(slurm_path, "w") as f:
             f.write(slurm_template)
 
