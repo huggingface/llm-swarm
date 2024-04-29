@@ -12,7 +12,8 @@ if [ -d "/fsx/.cache" ]; then
 else
     export volume=".cache"
 fi
-export model=mistralai/Mistral-7B-Instruct-v0.1
+export model={{model}}
+export revision={{revision}}
 
 function unused_port() {
     N=${1:-1}
