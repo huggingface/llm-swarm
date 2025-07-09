@@ -152,7 +152,7 @@ Note that we our slurm templates use Pyxis and Enroot for deploying Docker conta
 
 ## Benchmark
 
-We also include a nice utiliy script to benchmark throughput. You can run it like below:
+We also include a nice utility script to benchmark throughput. You can run it like below:
 
 ```bash
 # tgi
@@ -342,7 +342,7 @@ with LLMSwarm(isc) as llm_swarm:
     semaphore = asyncio.Semaphore(llm_swarm.suggested_max_parallel_requests)
 ```
 
-You can set `--per_instance_max_parallel_requests` to a lower number to limit the number of parallel requests initia
+You can set `--per_instance_max_parallel_requests` to a lower number to limit the number of parallel requests initiated per instance
 
 
 # Installing TGI from scratch (Dev notes)
